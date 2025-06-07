@@ -1,7 +1,9 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets, create_user_sheet_and_save_data
+from data_loader import load_sheets, create_user_csv_report, save_user_data_to_master_csv
 from recommender import filter_colleges
+import io
+from datetime import datetime
 
 st.title("🎓 JEE College Recommendation Bot")
 
@@ -209,41 +211,85 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     'iiit_count': len(iiits_df)
                 }
                 
-                # Create new sheet and save user data
-                with st.spinner("📄 Creating your personalized report..."):
+                # Create CSV reports
+                with st.spinner("📄 Creating your personalized CSV reports..."):
                     try:
-                        sheet_url, sheet_title = create_user_sheet_and_save_data(user_data, nits_df, iiits_df)
+                        user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
                         
-                        st.success("✅ Your personalized report has been created!")
-                        st.info(f"📊 **Sheet Name:** {sheet_title}")
+                        st.success("✅ Your personalized reports are ready for download!")
                         
-                        # Display the Google Sheet link
-                        st.markdown(f"🔗 **[Access Your Detailed Report Here]({sheet_url})**")
+                        # Create download buttons
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            # User Information CSV
+                            user_csv = user_info_df.to_csv(index=False)
+                            st.download_button(
+                                label="📋 Download Personal Info",
+                                data=user_csv,
+                                file_name=f"{report_name}_PersonalInfo.csv",
+                                mime="text/csv"
+                            )
+                        
+                        with col2:
+                            # Recommendations CSV
+                            if not recommendations_df.empty:
+                                recommendations_csv = recommendations_df.to_csv(index=False)
+                                st.download_button(
+                                    label="🏛️ Download Recommendations",
+                                    data=recommendations_csv,
+                                    file_name=f"{report_name}_Recommendations.csv",
+                                    mime="text/csv"
+                                )
+                            else:
+                                st.info("No recommendations to download")
+                        
+                        with col3:
+                            # Combined Report (Excel-like format)
+                            if not recommendations_df.empty:
+                                # Create a combined CSV with sections
+                                combined_data = []
+                                combined_data.append("=== PERSONAL INFORMATION ===")
+                                combined_data.append(user_info_df.to_csv(index=False))
+                                combined_data.append("\n=== COLLEGE RECOMMENDATIONS ===")
+                                combined_data.append(recommendations_df.to_csv(index=False))
+                                
+                                combined_csv = "\n".join(combined_data)
+                                st.download_button(
+                                    label="📊 Download Complete Report",
+                                    data=combined_csv,
+                                    file_name=f"{report_name}_CompleteReport.csv",
+                                    mime="text/csv"
+                                )
                         
                         st.markdown("""
-                        **Your report includes:**
-                        - 📋 Your personal information and preferences
-                        - 🏛️ NIT recommendations (if any)
-                        - 🏫 IIIT recommendations (if any)  
-                        - 💬 Chat/Notes section for future interactions
+                        **Your CSV reports include:**
+                        - 📋 Personal Information: Your details and preferences
+                        - 🏛️ College Recommendations: NIT and IIIT suggestions with ranks
+                        - 📊 Complete Report: Combined file with all information
                         
-                        **Note:** The sheet has been shared with our team for support and follow-up.
+                        **Tip:** Open CSV files in Excel or Google Sheets for better formatting!
                         """)
                         
+                        # Optional: Save to master tracking (you can remove this if not needed)
+                        master_df = save_user_data_to_master_csv(user_data)
+                        if master_df is not None:
+                            st.info("✅ Your submission has been recorded for follow-up support.")
+                        
                     except Exception as e:
-                        st.error(f"❌ Could not create personalized report: {e}")
-                        st.info("Your recommendations are still available above, but the detailed report could not be generated.")
+                        st.error(f"❌ Could not create CSV reports: {e}")
+                        st.info("Your recommendations are still available above, but downloads could not be generated.")
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")
-                st.error("Please check your Google Sheets connection and data.")
+                st.error("Please check your data connection.")
 
 # Add footer information
 st.markdown("---")
 st.markdown("""
 ### 📞 Need Help?
-If you have any questions about your recommendations or need assistance with college selection, 
-our team will reach out to you using the contact information provided.
+Download your CSV reports above and keep them for reference. 
+If you have questions about your recommendations, you can reach out with your report data.
 
 **Powered by JEE College Recommendation System**
 """)
