@@ -190,13 +190,3 @@ if st.sidebar.button("🔍 Get Recommendations"):
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")
                 st.error("Please check your Google Sheets connection and data.")
-
-# Additional information
-st.markdown("""
----
-### How it works:
-- **NITs**: Prioritized based on your home state (HS quota preferred over OS quota)
-- **IIITs**: Sorted by closing rank
-- **Filtering**: Based on Gender, Category, Degree, Branch, and your JEE Mains rank
-- **Recommendation**: Shows colleges where closing rank ≥ your rank
-""")
