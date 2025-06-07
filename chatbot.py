@@ -1,4 +1,4 @@
-from data_loader import load_sheets
+from data_loader import load_sheets, create_user_sheet_and_save_data
 from recommender import filter_colleges
 
 def run_bot():
@@ -124,6 +124,11 @@ def run_bot():
         "VLSI Design and Technology"
     ]
 
+    # --- User Personal Information ---
+    print("\n--- Personal Information ---")
+    name = input("Enter your Name: ").strip()
+    phone = input("Enter your Phone Number: ").strip()
+
     # --- User Inputs ---
     print("\nSelect your Gender:")
     for i, g in enumerate(gender_options, 1):
@@ -225,6 +230,37 @@ def run_bot():
         print("No IIITs found matching your criteria.")
     else:
         print(iiits_df.to_string(index=False))
+
+    # Prepare user data
+    user_data = {
+        'name': name,
+        'phone': phone,
+        'gender': gender,
+        'category': category,
+        'state': state,
+        'degrees': ', '.join(degrees),
+        'branches': ', '.join(branches),
+        'rank': rank,
+        'nit_count': len(nits_df),
+        'iiit_count': len(iiits_df)
+    }
+    
+    # Create new Google Sheet and save user data
+    print("\n📄 Creating your personalized report...")
+    try:
+        sheet_url, sheet_title = create_user_sheet_and_save_data(user_data, nits_df, iiits_df)
+        print("\n✅ Your personalized report has been created!")
+        print(f"📊 Sheet Name: {sheet_title}")
+        print(f"🔗 Access your detailed report: {sheet_url}")
+        print("\n📋 Your report includes:")
+        print("   - Your personal information and preferences")
+        print("   - NIT recommendations (if any)")
+        print("   - IIIT recommendations (if any)")
+        print("   - Chat/Notes section for future interactions")
+        print("\nNote: The sheet has been shared with our team for support and follow-up.")
+    except Exception as e:
+        print(f"⚠️ Could not create personalized report: {e}")
+        print("Your recommendations are still available above, but the detailed report could not be generated.")
 
 if __name__ == "__main__":
     run_bot()

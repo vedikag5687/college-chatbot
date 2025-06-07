@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets
+from data_loader import load_sheets, create_user_sheet_and_save_data
 from recommender import filter_colleges
 
 st.title("🎓 JEE College Recommendation Bot")
@@ -125,6 +125,10 @@ branch_options = [
 ]
 
 # --- UI Inputs ---
+st.sidebar.header("Personal Information")
+name = st.sidebar.text_input("Enter your Name")
+phone = st.sidebar.text_input("Enter your Phone Number")
+
 st.sidebar.header("Your Preferences")
 
 gender = st.sidebar.selectbox("Select your Gender", gender_options)
@@ -137,7 +141,9 @@ branches = st.sidebar.multiselect("Select Preferred Branch(es)", branch_options)
 rank = st.sidebar.number_input("Enter your JEE Mains Rank", min_value=1, value=10000)
 
 if st.sidebar.button("🔍 Get Recommendations"):
-    if not degrees or not branches:
+    if not name or not phone:
+        st.error("❌ Please enter your Name and Phone Number.")
+    elif not degrees or not branches:
         st.error("❌ Please select at least one Degree and one Branch.")
     else:
         with st.spinner("📥 Loading and filtering colleges..."):
@@ -176,7 +182,8 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     if nits_df.empty:
                         st.warning("No NITs found matching your criteria.")
                     else:
-                        st.dataframe(nits_df, use_container_width=True)
+                        # Display without index
+                        st.dataframe(nits_df, use_container_width=True, hide_index=True)
                         st.info(f"Found {len(nits_df)} NIT options")
 
                 with col2:
@@ -184,9 +191,59 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     if iiits_df.empty:
                         st.warning("No IIITs found matching your criteria.")
                     else:
-                        st.dataframe(iiits_df, use_container_width=True)
+                        # Display without index
+                        st.dataframe(iiits_df, use_container_width=True, hide_index=True)
                         st.info(f"Found {len(iiits_df)} IIIT options")
+
+                # Prepare user data
+                user_data = {
+                    'name': name,
+                    'phone': phone,
+                    'gender': gender,
+                    'category': category,
+                    'state': state,
+                    'degrees': ', '.join(degrees),
+                    'branches': ', '.join(branches),
+                    'rank': rank,
+                    'nit_count': len(nits_df),
+                    'iiit_count': len(iiits_df)
+                }
+                
+                # Create new sheet and save user data
+                with st.spinner("📄 Creating your personalized report..."):
+                    try:
+                        sheet_url, sheet_title = create_user_sheet_and_save_data(user_data, nits_df, iiits_df)
+                        
+                        st.success("✅ Your personalized report has been created!")
+                        st.info(f"📊 **Sheet Name:** {sheet_title}")
+                        
+                        # Display the Google Sheet link
+                        st.markdown(f"🔗 **[Access Your Detailed Report Here]({sheet_url})**")
+                        
+                        st.markdown("""
+                        **Your report includes:**
+                        - 📋 Your personal information and preferences
+                        - 🏛️ NIT recommendations (if any)
+                        - 🏫 IIIT recommendations (if any)  
+                        - 💬 Chat/Notes section for future interactions
+                        
+                        **Note:** The sheet has been shared with our team for support and follow-up.
+                        """)
+                        
+                    except Exception as e:
+                        st.error(f"❌ Could not create personalized report: {e}")
+                        st.info("Your recommendations are still available above, but the detailed report could not be generated.")
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")
                 st.error("Please check your Google Sheets connection and data.")
+
+# Add footer information
+st.markdown("---")
+st.markdown("""
+### 📞 Need Help?
+If you have any questions about your recommendations or need assistance with college selection, 
+our team will reach out to you using the contact information provided.
+
+**Powered by JEE College Recommendation System**
+""")
