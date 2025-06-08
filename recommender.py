@@ -13,7 +13,7 @@ def filter_colleges(df, gender, category, rank, degrees, branches, state=None, i
     filters = (
         (df['gender'].str.lower().str.strip() == gender.lower().strip()) &
         (df['category'].str.lower().str.strip() == category.lower().strip()) &
-        (df['close rank'] >= float(rank)) &
+        (df['close rank'] <= float(rank)) &
         (df['degree'].isin(degrees)) &
         (df['branch'].isin(branches))
     )
