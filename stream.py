@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets, save_user_chat_json, save_summary_json
+from data_loader import load_sheets, save_user_chat_json
 from recommender import filter_colleges
 
 st.title("🎓 JEE College Recommendation Bot")
@@ -236,12 +236,8 @@ if st.sidebar.button("🔍 Get Recommendations"):
                 except Exception as e:
                     st.warning(f"⚠️ Could not save chat JSON: {e}")
                 
-                # Save user summary
-                try:
-                    summary_filename = save_summary_json(user_data)
-                    st.success(f"✅ User summary updated in: {summary_filename}")
-                except Exception as e:
-                    st.warning(f"⚠️ Could not save summary: {e}")
+                
+                
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")
