@@ -12,7 +12,7 @@ def load_sheets():
 
     client = gspread.authorize(creds)
 
-    sheet_url = "https://docs.google.com/spreadsheets/d/1LW-TpBjX1mK1JT-kraWZ5g5D6ERD_PszqG6qucVYE3s"
+    sheet_url = "https://docs.google.com/spreadsheets/d/1LW-TpBjX1mK1JT-kraWZ5g5D6ERD_PszqG6qucVYE3s/edit"
     spreadsheet = client.open_by_url(sheet_url)
     sheet_names = ["NITs Round 5", "IIITs Round 5", "IITs Round 5"]
 
