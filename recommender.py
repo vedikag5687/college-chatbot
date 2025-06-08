@@ -23,14 +23,23 @@ def filter_colleges(df, gender, category, rank, degrees, branches, state=None, i
     if is_nit and state:
         def should_include_college(row):
             college_state = str(row.get('college state', '')).lower().strip()
-            # user_state = state.lower().strip()
-            user_state =  state
+            # Fix: Handle state parameter correctly - it comes as a list from stream.py
+            user_state = state[0].lower().strip() if isinstance(state, list) else str(state).lower().strip()
             quota = str(row.get('quota', '')).upper().strip()
             
+            print(f"[DEBUG] College: {row.get('college name', '')}")
+            print(f"[DEBUG] College State: '{college_state}' | User State: '{user_state}' | Quota: '{quota}'")
+            
             if college_state == user_state:
-                return quota == 'HS'
+                # Same state: Only HS quota
+                result = quota == 'HS'
+                print(f"[DEBUG] Same state - Include: {result} (quota should be HS)")
+                return result
             else:
-                return quota == 'OS'
+                # Different state: Only OS quota
+                result = quota == 'OS'
+                print(f"[DEBUG] Different state - Include: {result} (quota should be OS)")
+                return result
         
         df_filtered = df_filtered[df_filtered.apply(should_include_college, axis=1)].copy()
         

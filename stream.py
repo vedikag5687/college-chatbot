@@ -176,7 +176,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     rank,
                     degrees,
                     branches,
-                    state=[state],
+                    state=state,
                     is_nit=True
                 )
 
