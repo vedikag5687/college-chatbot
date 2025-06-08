@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets, save_user_data, save_user_chat_json
+from data_loader import load_sheets, save_user_chat_json, save_summary_json
 from recommender import filter_colleges
 
 st.title("🎓 JEE College Recommendation Bot")
@@ -13,9 +13,11 @@ st.markdown("""
 **Coming soon:** JEE Advanced based recommendations
 
 **New Features:**
+- ✅ Shows only colleges where Close Rank ≥ Your Rank (you can get admission)
 - ✅ College State filter for NITs (Home State: HS quota only, Other State: OS quota only)
-- ✅ Results sorted by close rank in ascending order
-- ✅ Complete chat history saved as JSON
+- ✅ Results sorted by close rank in ascending order (easiest to get first)
+- ✅ Complete chat history saved as JSON in local folder
+- ✅ No Google Sheets storage - everything saved locally
 """)
 
 # --- Hardcoded Selections ---
@@ -148,11 +150,12 @@ rank = st.sidebar.number_input("Enter your JEE Mains Rank", min_value=1, value=1
 # Add info about the filtering logic
 st.sidebar.markdown("---")
 st.sidebar.info("""
-**NIT Filtering Logic:**
-- Home State colleges: Only HS quota seats
-- Other State colleges: Only OS quota seats
-- Your Rank ≤ Close Rank (you can get admission)
-- Results sorted by close rank (ascending)
+**Updated Filtering Logic:**
+- ✅ Shows only colleges where Close Rank ≥ Your Rank
+- ✅ Home State colleges: Only HS quota seats
+- ✅ Other State colleges: Only OS quota seats
+- ✅ Results sorted by close rank (easiest first)
+- ✅ Data saved locally as JSON files
 """)
 
 if st.sidebar.button("🔍 Get Recommendations"):
@@ -197,20 +200,20 @@ if st.sidebar.button("🔍 Get Recommendations"):
                 with col1:
                     st.subheader("🟢 NITs")
                     if nits_df.empty:
-                        st.warning("No NITs found matching your criteria.")
+                        st.warning("No NITs found where you can get admission with your current rank.")
                     else:
                         # Display without index
                         st.dataframe(nits_df, use_container_width=True, hide_index=True)
-                        st.info(f"Found {len(nits_df)} NIT options (sorted by close rank)")
+                        st.info(f"Found {len(nits_df)} NIT options where you can get admission")
 
                 with col2:
                     st.subheader("🟣 IIITs")
                     if iiits_df.empty:
-                        st.warning("No IIITs found matching your criteria.")
+                        st.warning("No IIITs found where you can get admission with your current rank.")
                     else:
                         # Display without index
                         st.dataframe(iiits_df, use_container_width=True, hide_index=True)
-                        st.info(f"Found {len(iiits_df)} IIIT options (sorted by close rank)")
+                        st.info(f"Found {len(iiits_df)} IIIT options where you can get admission")
 
                 # Prepare user data
                 user_data = {
@@ -226,19 +229,19 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     'iiit_count': len(iiits_df)
                 }
                 
-                # Save to Google Sheets
-                try:
-                    save_user_data(user_data)
-                    st.success("✅ Your preferences have been saved to Google Sheets!")
-                except Exception as e:
-                    st.warning(f"⚠️ Could not save to Google Sheets: {e}")
-                
-                # Save complete chat as JSON
+                # Save complete chat as JSON (removed Google Sheets)
                 try:
                     json_filename = save_user_chat_json(user_data, nits_df, iiits_df)
                     st.success(f"✅ Complete chat saved as: {json_filename}")
                 except Exception as e:
                     st.warning(f"⚠️ Could not save chat JSON: {e}")
+                
+                # Save user summary
+                try:
+                    summary_filename = save_summary_json(user_data)
+                    st.success(f"✅ User summary updated in: {summary_filename}")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not save summary: {e}")
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")

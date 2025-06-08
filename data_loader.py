@@ -38,54 +38,14 @@ def load_sheets():
 
     return data
 
-def save_user_data(user_data):
-    """Save user data and preferences to Google Sheets"""
-    try:
-        scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], scope)
-        client = gspread.authorize(creds)
-
-        # Open the same spreadsheet
-        sheet_url = "https://docs.google.com/spreadsheets/d/1LW-TpBjX1mK1JT-kraWZ5g5D6ERD_PszqG6qucVYE3s/edit"
-        spreadsheet = client.open_by_url(sheet_url)
-        
-        # Try to open existing "User Data" sheet, or create new one
-        try:
-            worksheet = spreadsheet.worksheet("User Data")
-        except gspread.WorksheetNotFound:
-            worksheet = spreadsheet.add_worksheet(title="User Data", rows="1000", cols="20")
-            # Add headers
-            headers = [
-                "Timestamp", "Name", "Phone", "Gender", "Category", "State", 
-                "Degrees", "Branches", "JEE Rank", "NITs Found", "IIITs Found"
-            ]
-            worksheet.append_row(headers)
-
-        # Prepare data row
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        row_data = [
-            timestamp,
-            user_data['name'],
-            user_data['phone'],
-            user_data['gender'],
-            user_data['category'],
-            user_data['state'],
-            user_data['degrees'],
-            user_data['branches'],
-            str(user_data['rank']),
-            str(user_data['nit_count']),
-            str(user_data['iiit_count'])
-        ]
-        
-        # Append the row
-        worksheet.append_row(row_data)
-        
-    except Exception as e:
-        raise Exception(f"Failed to save user data: {str(e)}")
-
 def save_user_chat_json(user_data, nits_results, iiits_results):
     """Save complete user chat data to JSON file in project folder"""
     try:
+        # Create data folder if it doesn't exist
+        data_folder = "user_data"
+        if not os.path.exists(data_folder):
+            os.makedirs(data_folder)
+        
         # Create chat data structure
         chat_data = {
             "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
@@ -110,6 +70,7 @@ def save_user_chat_json(user_data, nits_results, iiits_results):
                 }
             },
             "filters_applied": {
+                "rank_filter": f"Close Rank >= {user_data['rank']} (User can get admission)",
                 "college_state_filter": True,
                 "quota_logic": "Same state: HS only, Different state: OS only",
                 "sorting": "Close rank ascending"
@@ -119,7 +80,7 @@ def save_user_chat_json(user_data, nits_results, iiits_results):
         # Create filename with timestamp and user name
         safe_name = "".join(c for c in user_data['name'] if c.isalnum() or c in (' ', '-', '_')).rstrip()
         timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
-        filename = f"user_chat_{safe_name}_{timestamp_str}.json"
+        filename = os.path.join(data_folder, f"user_chat_{safe_name}_{timestamp_str}.json")
         
         # Save to project folder
         with open(filename, 'w', encoding='utf-8') as f:
