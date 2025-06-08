@@ -27,7 +27,8 @@ def filter_colleges(df, gender, category, rank, degrees, branches, state=None, i
         # Apply College State and Quota logic for NITs
         def should_include_college(row):
             college_state = str(row.get('college state', '')).lower().strip()
-            user_state = state.lower().strip()
+            # user_state = state.lower().strip()
+            user_state =  state
             quota = str(row.get('quota', '')).upper().strip()
             
             if college_state == user_state:
