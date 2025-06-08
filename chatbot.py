@@ -1,4 +1,4 @@
-from data_loader import load_sheets, create_user_csv_report, save_user_data_to_master_csv
+from data_loader import load_sheets, save_user_data_to_master_csv
 from recommender import filter_colleges
 import pandas as pd
 from datetime import datetime
@@ -84,45 +84,6 @@ def display_results(nits_df, iiits_df, user_data):
         print("-" * 70)
         for idx, (_, row) in enumerate(iiits_df.iterrows(), 1):
             print(f"{idx:<5} {row['college name'][:47]:<50} {int(row['close rank']):<10}")
-
-def save_user_session_csv(user_data, nits_df, iiits_df):
-    """Save individual user session data to CSV"""
-    try:
-        # Create user-specific CSV report
-        user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
-        
-        # Save user info CSV
-        user_info_filename = f"{report_name}_PersonalInfo.csv"
-        user_info_df.to_csv(user_info_filename, index=False)
-        
-        # Save recommendations CSV if available
-        recommendations_filename = None
-        if not recommendations_df.empty:
-            recommendations_filename = f"{report_name}_Recommendations.csv"
-            recommendations_df.to_csv(recommendations_filename, index=False)
-        
-        # Save combined report
-        combined_filename = f"{report_name}_CompleteReport.csv"
-        with open(combined_filename, 'w', newline='', encoding='utf-8') as f:
-            f.write("=== PERSONAL INFORMATION ===\n")
-            f.write(user_info_df.to_csv(index=False))
-            f.write("\n=== COLLEGE RECOMMENDATIONS ===\n")
-            if not recommendations_df.empty:
-                f.write(recommendations_df.to_csv(index=False))
-            else:
-                f.write("No recommendations found matching your criteria.\n")
-        
-        print(f"\n📄 Your session data has been saved:")
-        print(f"   • Personal Info: {user_info_filename}")
-        if recommendations_filename:
-            print(f"   • Recommendations: {recommendations_filename}")
-        print(f"   • Complete Report: {combined_filename}")
-        
-        return True
-        
-    except Exception as e:
-        print(f"❌ Error saving session data: {str(e)}")
-        return False
 
 def run_bot():
     print("="*80)
@@ -328,37 +289,24 @@ def run_bot():
         # Display results
         display_results(nits_df, iiits_df, user_data)
         
-        # Save to master CSV (auto-update)
-        print("\n💾 Saving your data to master database...")
+        # Silently save to master CSV (no user notification)
         try:
-            master_df, master_csv_path = save_user_data_to_master_csv(user_data)
-            if master_df is not None:
-                print(f"✅ Your data has been added to the master record!")
-                print(f"📊 Total users in database: {len(master_df)}")
-            else:
-                print("⚠️ Could not update master database, but continuing...")
-        except Exception as e:
-            print(f"⚠️ Warning: Could not update master database: {str(e)}")
-        
-        # Save individual session data
-        print("\n💾 Creating your personalized CSV reports...")
-        if save_user_session_csv(user_data, nits_df, iiits_df):
-            print("✅ Your session data has been saved successfully!")
+            save_user_data_to_master_csv(user_data)
+        except Exception:
+            pass  # Silently ignore errors in data saving
         
         # Summary
         print("\n" + "="*80)
         print("📊 SUMMARY")
         print("="*80)
         print(f"👤 Name: {name}")
-        print(f"📱 Phone: {phone}")
         print(f"🎯 JEE Mains Rank: {rank}")
         print(f"🟢 NITs Found: {len(nits_df)}")
         print(f"🟣 IIITs Found: {len(iiits_df)}")
         print(f"📅 Generated On: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
         
         print("\n✅ Recommendation process completed!")
-        print("📄 Check the generated CSV files for detailed reports.")
-        print("🔄 Your data has been automatically saved to the master database.")
+        print("Thank you for using our recommendation system!")
         
     except Exception as e:
         print(f"\n❌ Error occurred: {str(e)}")

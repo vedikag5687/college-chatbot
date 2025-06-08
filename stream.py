@@ -1,27 +1,19 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets, create_user_csv_report, save_user_data_to_master_csv, get_master_csv_download
+from data_loader import load_sheets, save_user_data_to_master_csv
 from recommender import filter_colleges
-import io
 from datetime import datetime
 
 st.title("🎓 JEE College Recommendation Bot")
 
-# Introduction
+# Clean introduction without technical details
 st.markdown("""
 ### Hello! I can recommend colleges based on your JEE rank.
 
 **Currently supported:** JEE Mains based recommendations
-**Coming soon:** JEE Advanced based recommendations
-
-**New Features:**
-- 🎯 Smart State-based Quota Filtering (HS for home state, OS for other states)
-- 📊 Auto-updating Master Database
-- 💾 Individual CSV Downloads
-- 📈 Rank-based Sorting
 """)
 
-# --- Hardcoded Selections (Keep exactly same as chatbot.py) ---
+# --- Hardcoded Selections ---
 gender_options = ["Gender-Neutral", "Female-only (including Supernumerary)"]
 category_options = ["SC", "ST", "EWS", "EWS (PwD)", "OBC-NCL", "OBC-NCL (PwD)", "OPEN", "OPEN (PwD)", "SC (PwD)", "ST (PwD)"]
 state_options = ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Manipur", "Meghalaya", "Mizoram", "Maharashtra", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"]
@@ -148,22 +140,6 @@ branches = st.sidebar.multiselect("Select Preferred Branch(es)", branch_options)
 
 rank = st.sidebar.number_input("Enter your JEE Mains Rank", min_value=1, value=10000)
 
-# Add admin section for downloading master CSV
-st.sidebar.markdown("---")
-st.sidebar.header("📊 Admin Section")
-if st.sidebar.button("📥 Download Master CSV (All Users)"):
-    master_csv_content = get_master_csv_download()
-    if master_csv_content:
-        st.sidebar.download_button(
-            label="💾 Download Master Data",
-            data=master_csv_content,
-            file_name=f"master_user_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-        st.sidebar.success("✅ Master CSV ready for download!")
-    else:
-        st.sidebar.warning("⚠️ No master data available yet.")
-
 if st.sidebar.button("🔍 Get Recommendations"):
     if not name or not phone:
         st.error("❌ Please enter your Name and Phone Number.")
@@ -174,7 +150,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
             try:
                 sheets = load_sheets()
                 
-                # --- NITs with State & Quota prioritization (SAME AS CHATBOT.PY) ---
+                # Filter NITs with State & Quota prioritization
                 nits_df = filter_colleges(
                     sheets["nits round 5"],
                     gender,
@@ -186,7 +162,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     is_nit=True
                 )
 
-                # --- IIITs without state sorting (SAME AS CHATBOT.PY) ---
+                # Filter IIITs without state sorting
                 iiits_df = filter_colleges(
                     sheets["iiits round 5"],
                     gender,
@@ -194,13 +170,13 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     rank,
                     degrees,
                     branches,
-                    state=None,  # Explicitly set to None for IIITs
+                    state=None,
                     is_nit=False
                 )
 
                 st.success("✅ Recommendations generated successfully!")
                 
-                # Display results with enhanced information
+                # Display results
                 col1, col2 = st.columns(2)
                 
                 with col1:
@@ -218,9 +194,6 @@ if st.sidebar.button("🔍 Get Recommendations"):
                         
                         st.dataframe(nits_display, use_container_width=True, hide_index=True)
                         st.info(f"Found {len(nits_df)} NIT options")
-                        
-                        # Show state-based filtering info
-                        st.caption(f"🏠 Showing colleges with appropriate quota (HS for {state}, OS for other states)")
 
                 with col2:
                     st.subheader("🟣 IIITs")
@@ -238,7 +211,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
                         st.dataframe(iiits_display, use_container_width=True, hide_index=True)
                         st.info(f"Found {len(iiits_df)} IIIT options")
 
-                # Prepare user data (SAME AS CHATBOT.PY)
+                # Prepare user data and save silently in background
                 user_data = {
                     'name': name,
                     'phone': phone,
@@ -252,143 +225,16 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     'iiit_count': len(iiits_df)
                 }
                 
-                # Create CSV reports and update master CSV (SAME AS CHATBOT.PY)
-                with st.spinner("📄 Creating your personalized CSV reports..."):
-                    try:
-                        user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
-                        
-                        # Save to master CSV and get the updated data (AUTO-UPDATE FEATURE)
-                        master_df, master_csv_path = save_user_data_to_master_csv(user_data)
-                        
-                        st.success("✅ Your personalized reports are ready for download!")
-                        
-                        if master_df is not None:
-                            st.info(f"📊 Your data has been automatically added to the master database (Total users: {len(master_df)})")
-                        
-                        # Create download buttons
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            # User Information CSV
-                            user_csv = user_info_df.to_csv(index=False)
-                            st.download_button(
-                                label="📋 Download Personal Info",
-                                data=user_csv,
-                                file_name=f"{report_name}_PersonalInfo.csv",
-                                mime="text/csv"
-                            )
-                        
-                        with col2:
-                            # Recommendations CSV
-                            if not recommendations_df.empty:
-                                recommendations_csv = recommendations_df.to_csv(index=False)
-                                st.download_button(
-                                    label="🏛️ Download Recommendations",
-                                    data=recommendations_csv,
-                                    file_name=f"{report_name}_Recommendations.csv",
-                                    mime="text/csv"
-                                )
-                            else:
-                                st.info("No recommendations to download")
-                        
-                        with col3:
-                            # Combined Report (Excel-like format)
-                            if not recommendations_df.empty:
-                                # Create a combined CSV with sections
-                                combined_data = []
-                                combined_data.append("=== PERSONAL INFORMATION ===")
-                                combined_data.append(user_info_df.to_csv(index=False))
-                                combined_data.append("\n=== COLLEGE RECOMMENDATIONS ===")
-                                combined_data.append(recommendations_df.to_csv(index=False))
-                                
-                                combined_csv = "\n".join(combined_data)
-                                st.download_button(
-                                    label="📊 Download Complete Report",
-                                    data=combined_csv,
-                                    file_name=f"{report_name}_CompleteReport.csv",
-                                    mime="text/csv"
-                                )
-                        
-                        # Enhanced information section
-                        st.markdown(f"""
-                        **📊 Your Session Summary:**
-                        - 👤 **Name:** {name}
-                        - 📱 **Phone:** {phone}
-                        - 🎯 **JEE Rank:** {rank:,}
-                        - 🟢 **NITs Found:** {len(nits_df)}
-                        - 🟣 **IIITs Found:** {len(iiits_df)}
-                        - 🏠 **Home State:** {state}
-                        - 📅 **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
-                        
-                        **📋 Your CSV reports include:**
-                        - 📋 **Personal Information:** Your details and preferences
-                        - 🏛️ **College Recommendations:** NIT and IIIT suggestions with ranks
-                        - 📊 **Complete Report:** Combined file with all information
-                        
-                        **🔄 Auto-Features:**
-                        - ✅ Your data is automatically saved to our master database
-                        - ✅ State-based quota filtering applied (HS/OS)
-                        - ✅ Results sorted by closing rank (ascending)
-                        
-                        **💡 Tip:** Open CSV files in Excel or Google Sheets for better formatting!
-                        """)
-                        
-                    except Exception as e:
-                        st.error(f"❌ Could not create CSV reports: {e}")
-                        st.info("Your recommendations are still available above, but downloads could not be generated.")
+                # Silently save to master CSV (no user notification)
+                try:
+                    save_user_data_to_master_csv(user_data)
+                except Exception:
+                    pass  # Silently ignore errors in data saving
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")
                 st.error("Please check your data connection and try again.")
 
-# Add enhanced footer information
+# Simple footer
 st.markdown("---")
-st.markdown("""
-### 📞 Need Help?
-Download your CSV reports above and keep them for reference. 
-Your data is automatically saved in our system for follow-up support.
-
-**🔧 Technical Features:**
-- ✅ **Smart State-based Filtering**: For NITs, we show only relevant quota seats
-  - 🏠 **Same State as yours**: Only HS (Home State) quota seats
-  - 🌍 **Different States**: Only OS (Other State) quota seats
-- ✅ **Auto-updating Master Database**: All user data is automatically saved
-- ✅ **Individual Download Reports**: Each user gets personalized CSV files
-- ✅ **Intelligent Sorting**: Results sorted by closing rank (best opportunities first)
-- ✅ **Rank Difference Analysis**: See how close you are to each college's cutoff
-
-**🎯 Compatibility:**
-- ✅ Works perfectly with command-line `chatbot.py`
-- ✅ Uses same backend functions and data sources
-- ✅ Maintains consistency across both interfaces
-
-**Powered by JEE College Recommendation System v2.0**
-""")
-
-# Enhanced debug information
-if st.checkbox("🔧 Show Debug Info"):
-    st.markdown("### 🔍 Debug Information")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        st.write("**User Selections:**")
-        st.write("🏠 Selected State:", state)
-        st.write("👤 Selected Gender:", gender)
-        st.write("🏷️ Selected Category:", category)
-        st.write("🎓 Selected Degrees:", degrees)
-        st.write("🔬 Selected Branches:", branches)
-        st.write("📊 JEE Rank:", rank)
-    
-    with col2:
-        st.write("**System Info:**")
-        st.write("📅 Current Time:", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
-        st.write("🔄 Master CSV Auto-update:", "✅ Enabled")
-        st.write("🎯 State-based Filtering:", "✅ Enabled")
-        st.write("📈 Rank-based Sorting:", "✅ Enabled")
-        
-    st.write("**Available Options Count:**")
-    st.write(f"- Gender Options: {len(gender_options)}")
-    st.write(f"- Category Options: {len(category_options)}")
-    st.write(f"- State Options: {len(state_options)}")
-    st.write(f"- Degree Options: {len(degree_options)}")
-    st.write(f"- Branch Options: {len(branch_options)}")
+st.markdown("**Thank you for using JEE College Recommendation System!**")
