@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets, create_user_csv_report, save_user_data_to_master_csv
+from data_loader import load_sheets, create_user_csv_report, save_user_data_to_master_csv, get_master_csv_download
 from recommender import filter_colleges
 import io
 from datetime import datetime
@@ -13,9 +13,15 @@ st.markdown("""
 
 **Currently supported:** JEE Mains based recommendations
 **Coming soon:** JEE Advanced based recommendations
+
+**New Features:**
+- 🎯 Smart State-based Quota Filtering (HS for home state, OS for other states)
+- 📊 Auto-updating Master Database
+- 💾 Individual CSV Downloads
+- 📈 Rank-based Sorting
 """)
 
-# --- Hardcoded Selections ---
+# --- Hardcoded Selections (Keep exactly same as chatbot.py) ---
 gender_options = ["Gender-Neutral", "Female-only (including Supernumerary)"]
 category_options = ["SC", "ST", "EWS", "EWS (PwD)", "OBC-NCL", "OBC-NCL (PwD)", "OPEN", "OPEN (PwD)", "SC (PwD)", "ST (PwD)"]
 state_options = ["Andhra Pradesh", "Arunachal Pradesh", "Assam", "Bihar", "Chhattisgarh", "Delhi", "Goa", "Gujarat", "Haryana", "Himachal Pradesh", "Jammu and Kashmir", "Jharkhand", "Karnataka", "Kerala", "Madhya Pradesh", "Manipur", "Meghalaya", "Mizoram", "Maharashtra", "Nagaland", "Odisha", "Puducherry", "Punjab", "Rajasthan", "Sikkim", "Tamil Nadu", "Telangana", "Tripura", "Uttar Pradesh", "Uttarakhand", "West Bengal"]
@@ -127,11 +133,11 @@ branch_options = [
 ]
 
 # --- UI Inputs ---
-st.sidebar.header("Personal Information")
+st.sidebar.header("📋 Personal Information")
 name = st.sidebar.text_input("Enter your Name")
 phone = st.sidebar.text_input("Enter your Phone Number")
 
-st.sidebar.header("Your Preferences")
+st.sidebar.header("🎯 Your Preferences")
 
 gender = st.sidebar.selectbox("Select your Gender", gender_options)
 category = st.sidebar.selectbox("Select your Category", category_options)
@@ -141,6 +147,22 @@ degrees = st.sidebar.multiselect("Select Preferred Degree(s)", degree_options)
 branches = st.sidebar.multiselect("Select Preferred Branch(es)", branch_options)
 
 rank = st.sidebar.number_input("Enter your JEE Mains Rank", min_value=1, value=10000)
+
+# Add admin section for downloading master CSV
+st.sidebar.markdown("---")
+st.sidebar.header("📊 Admin Section")
+if st.sidebar.button("📥 Download Master CSV (All Users)"):
+    master_csv_content = get_master_csv_download()
+    if master_csv_content:
+        st.sidebar.download_button(
+            label="💾 Download Master Data",
+            data=master_csv_content,
+            file_name=f"master_user_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+            mime="text/csv"
+        )
+        st.sidebar.success("✅ Master CSV ready for download!")
+    else:
+        st.sidebar.warning("⚠️ No master data available yet.")
 
 if st.sidebar.button("🔍 Get Recommendations"):
     if not name or not phone:
@@ -152,7 +174,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
             try:
                 sheets = load_sheets()
                 
-                # --- NITs with State & Quota prioritization ---
+                # --- NITs with State & Quota prioritization (SAME AS CHATBOT.PY) ---
                 nits_df = filter_colleges(
                     sheets["nits round 5"],
                     gender,
@@ -164,40 +186,59 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     is_nit=True
                 )
 
-                # --- IIITs without state sorting ---
+                # --- IIITs without state sorting (SAME AS CHATBOT.PY) ---
                 iiits_df = filter_colleges(
                     sheets["iiits round 5"],
                     gender,
                     category,
                     rank,
                     degrees,
-                    branches
+                    branches,
+                    state=None,  # Explicitly set to None for IIITs
+                    is_nit=False
                 )
 
                 st.success("✅ Recommendations generated successfully!")
                 
-                # Display results
+                # Display results with enhanced information
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     st.subheader("🟢 NITs")
                     if nits_df.empty:
                         st.warning("No NITs found matching your criteria.")
+                        st.info("💡 Try adjusting your preferences or rank range.")
                     else:
-                        # Display without index
-                        st.dataframe(nits_df, use_container_width=True, hide_index=True)
+                        # Add rank difference column for better insight
+                        nits_display = nits_df.copy()
+                        nits_display['Rank Difference'] = nits_display['close rank'] - rank
+                        nits_display['Close Rank'] = nits_display['close rank'].astype(int)
+                        nits_display = nits_display[['college name', 'Close Rank', 'Rank Difference']]
+                        nits_display.columns = ['College Name', 'Close Rank', 'Rank Difference']
+                        
+                        st.dataframe(nits_display, use_container_width=True, hide_index=True)
                         st.info(f"Found {len(nits_df)} NIT options")
+                        
+                        # Show state-based filtering info
+                        st.caption(f"🏠 Showing colleges with appropriate quota (HS for {state}, OS for other states)")
 
                 with col2:
                     st.subheader("🟣 IIITs")
                     if iiits_df.empty:
                         st.warning("No IIITs found matching your criteria.")
+                        st.info("💡 Try adjusting your preferences or rank range.")
                     else:
-                        # Display without index
-                        st.dataframe(iiits_df, use_container_width=True, hide_index=True)
+                        # Add rank difference column for better insight
+                        iiits_display = iiits_df.copy()
+                        iiits_display['Rank Difference'] = iiits_display['close rank'] - rank
+                        iiits_display['Close Rank'] = iiits_display['close rank'].astype(int)
+                        iiits_display = iiits_display[['college name', 'Close Rank', 'Rank Difference']]
+                        iiits_display.columns = ['College Name', 'Close Rank', 'Rank Difference']
+                        
+                        st.dataframe(iiits_display, use_container_width=True, hide_index=True)
                         st.info(f"Found {len(iiits_df)} IIIT options")
 
-                # Prepare user data
+                # Prepare user data (SAME AS CHATBOT.PY)
                 user_data = {
                     'name': name,
                     'phone': phone,
@@ -211,12 +252,18 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     'iiit_count': len(iiits_df)
                 }
                 
-                # Create CSV reports
+                # Create CSV reports and update master CSV (SAME AS CHATBOT.PY)
                 with st.spinner("📄 Creating your personalized CSV reports..."):
                     try:
                         user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
                         
+                        # Save to master CSV and get the updated data (AUTO-UPDATE FEATURE)
+                        master_df, master_csv_path = save_user_data_to_master_csv(user_data)
+                        
                         st.success("✅ Your personalized reports are ready for download!")
+                        
+                        if master_df is not None:
+                            st.info(f"📊 Your data has been automatically added to the master database (Total users: {len(master_df)})")
                         
                         # Create download buttons
                         col1, col2, col3 = st.columns(3)
@@ -262,19 +309,29 @@ if st.sidebar.button("🔍 Get Recommendations"):
                                     mime="text/csv"
                                 )
                         
-                        st.markdown("""
-                        **Your CSV reports include:**
-                        - 📋 Personal Information: Your details and preferences
-                        - 🏛️ College Recommendations: NIT and IIIT suggestions with ranks
-                        - 📊 Complete Report: Combined file with all information
+                        # Enhanced information section
+                        st.markdown(f"""
+                        **📊 Your Session Summary:**
+                        - 👤 **Name:** {name}
+                        - 📱 **Phone:** {phone}
+                        - 🎯 **JEE Rank:** {rank:,}
+                        - 🟢 **NITs Found:** {len(nits_df)}
+                        - 🟣 **IIITs Found:** {len(iiits_df)}
+                        - 🏠 **Home State:** {state}
+                        - 📅 **Generated:** {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
                         
-                        **Tip:** Open CSV files in Excel or Google Sheets for better formatting!
+                        **📋 Your CSV reports include:**
+                        - 📋 **Personal Information:** Your details and preferences
+                        - 🏛️ **College Recommendations:** NIT and IIIT suggestions with ranks
+                        - 📊 **Complete Report:** Combined file with all information
+                        
+                        **🔄 Auto-Features:**
+                        - ✅ Your data is automatically saved to our master database
+                        - ✅ State-based quota filtering applied (HS/OS)
+                        - ✅ Results sorted by closing rank (ascending)
+                        
+                        **💡 Tip:** Open CSV files in Excel or Google Sheets for better formatting!
                         """)
-                        
-                        # Optional: Save to master tracking (you can remove this if not needed)
-                        master_df = save_user_data_to_master_csv(user_data)
-                        if master_df is not None:
-                            st.info("✅ Your submission has been recorded for follow-up support.")
                         
                     except Exception as e:
                         st.error(f"❌ Could not create CSV reports: {e}")
@@ -282,14 +339,56 @@ if st.sidebar.button("🔍 Get Recommendations"):
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")
-                st.error("Please check your data connection.")
+                st.error("Please check your data connection and try again.")
 
-# Add footer information
+# Add enhanced footer information
 st.markdown("---")
 st.markdown("""
 ### 📞 Need Help?
 Download your CSV reports above and keep them for reference. 
-If you have questions about your recommendations, you can reach out with your report data.
+Your data is automatically saved in our system for follow-up support.
 
-**Powered by JEE College Recommendation System**
+**🔧 Technical Features:**
+- ✅ **Smart State-based Filtering**: For NITs, we show only relevant quota seats
+  - 🏠 **Same State as yours**: Only HS (Home State) quota seats
+  - 🌍 **Different States**: Only OS (Other State) quota seats
+- ✅ **Auto-updating Master Database**: All user data is automatically saved
+- ✅ **Individual Download Reports**: Each user gets personalized CSV files
+- ✅ **Intelligent Sorting**: Results sorted by closing rank (best opportunities first)
+- ✅ **Rank Difference Analysis**: See how close you are to each college's cutoff
+
+**🎯 Compatibility:**
+- ✅ Works perfectly with command-line `chatbot.py`
+- ✅ Uses same backend functions and data sources
+- ✅ Maintains consistency across both interfaces
+
+**Powered by JEE College Recommendation System v2.0**
 """)
+
+# Enhanced debug information
+if st.checkbox("🔧 Show Debug Info"):
+    st.markdown("### 🔍 Debug Information")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        st.write("**User Selections:**")
+        st.write("🏠 Selected State:", state)
+        st.write("👤 Selected Gender:", gender)
+        st.write("🏷️ Selected Category:", category)
+        st.write("🎓 Selected Degrees:", degrees)
+        st.write("🔬 Selected Branches:", branches)
+        st.write("📊 JEE Rank:", rank)
+    
+    with col2:
+        st.write("**System Info:**")
+        st.write("📅 Current Time:", datetime.now().strftime('%Y-%m-%d %H:%M:%S'))
+        st.write("🔄 Master CSV Auto-update:", "✅ Enabled")
+        st.write("🎯 State-based Filtering:", "✅ Enabled")
+        st.write("📈 Rank-based Sorting:", "✅ Enabled")
+        
+    st.write("**Available Options Count:**")
+    st.write(f"- Gender Options: {len(gender_options)}")
+    st.write(f"- Category Options: {len(category_options)}")
+    st.write(f"- State Options: {len(state_options)}")
+    st.write(f"- Degree Options: {len(degree_options)}")
+    st.write(f"- Branch Options: {len(branch_options)}")

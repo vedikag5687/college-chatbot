@@ -3,7 +3,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 import streamlit as st
 from datetime import datetime
-import io
+import os
 
 def load_sheets():
     """Load data from Google Sheets (this part stays the same for data loading)"""
@@ -101,36 +101,68 @@ def create_user_csv_report(user_data, nits_df, iiits_df):
         raise Exception(f"Failed to create CSV report: {str(e)}")
 
 def save_user_data_to_master_csv(user_data):
-    """Save user data to a master tracking CSV (optional - for your records)"""
+    """Save user data to a master tracking CSV file and auto-update it"""
     try:
-        # This creates a simple tracking record
         timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        master_data = {
-            'Timestamp': [timestamp_str],
-            'Name': [user_data['name']],
-            'Phone': [user_data['phone']],
-            'Gender': [user_data['gender']],
-            'Category': [user_data['category']],
-            'State': [user_data['state']],
-            'Degrees': [user_data['degrees']],
-            'Branches': [user_data['branches']],
-            'JEE_Rank': [user_data['rank']],
-            'NITs_Found': [user_data['nit_count']],
-            'IIITs_Found': [user_data['iiit_count']]
+        # Create new user data entry
+        new_user_data = {
+            'Timestamp': timestamp_str,
+            'Name': user_data['name'],
+            'Phone': user_data['phone'],
+            'Gender': user_data['gender'],
+            'Category': user_data['category'],
+            'State': user_data['state'],
+            'Degrees': user_data['degrees'],
+            'Branches': user_data['branches'],
+            'JEE_Rank': user_data['rank'],
+            'NITs_Found': user_data['nit_count'],
+            'IIITs_Found': user_data['iiit_count']
         }
         
-        master_df = pd.DataFrame(master_data)
-        return master_df
+        # Define the master CSV file path
+        master_csv_path = "master_user_data.csv"
+        
+        # Check if master CSV file exists
+        if os.path.exists(master_csv_path):
+            # Read existing data
+            existing_df = pd.read_csv(master_csv_path)
+            # Add new row
+            new_row_df = pd.DataFrame([new_user_data])
+            updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
+        else:
+            # Create new DataFrame if file doesn't exist
+            updated_df = pd.DataFrame([new_user_data])
+        
+        # Save updated data back to CSV
+        updated_df.to_csv(master_csv_path, index=False)
+        
+        return updated_df, master_csv_path
         
     except Exception as e:
-        st.warning(f"Could not create master tracking data: {str(e)}")
+        print(f"Warning: Could not update master CSV: {str(e)}")
+        return None, None
+
+def get_master_csv_download():
+    """Get the master CSV file for download"""
+    try:
+        master_csv_path = "master_user_data.csv"
+        if os.path.exists(master_csv_path):
+            with open(master_csv_path, 'r') as f:
+                return f.read()
+        else:
+            return None
+    except Exception as e:
+        print(f"Error reading master CSV: {str(e)}")
         return None
 
 # Legacy function for backward compatibility
 def create_user_sheet_and_save_data(user_data, nits_df, iiits_df):
     """Legacy function - now returns CSV data instead of Google Sheet"""
     user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
+    
+    # Also save to master CSV
+    save_user_data_to_master_csv(user_data)
     
     # Return a fake URL and the report name for compatibility
     return "CSV_REPORT_GENERATED", report_name
