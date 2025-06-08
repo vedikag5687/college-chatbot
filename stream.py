@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets, save_user_data_to_master_csv
+from data_loader import load_sheets, save_user_data_to_master_csv, create_user_csv_report
 from recommender import filter_colleges
 from datetime import datetime
+import io
 
 st.title("🎓 JEE College Recommendation Bot")
 
@@ -150,6 +151,11 @@ if st.sidebar.button("🔍 Get Recommendations"):
             try:
                 sheets = load_sheets()
                 
+                # Debug: Show what sheets were loaded
+                st.write("📊 **Debug Info:**")
+                for sheet_name, df in sheets.items():
+                    st.write(f"- {sheet_name}: {len(df)} records")
+                
                 # Filter NITs with State & Quota prioritization
                 nits_df = filter_colleges(
                     sheets["nits round 5"],
@@ -211,7 +217,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
                         st.dataframe(iiits_display, use_container_width=True, hide_index=True)
                         st.info(f"Found {len(iiits_df)} IIIT options")
 
-                # Prepare user data and save silently in background
+                # Prepare user data and save
                 user_data = {
                     'name': name,
                     'phone': phone,
@@ -225,11 +231,55 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     'iiit_count': len(iiits_df)
                 }
                 
-                # Silently save to master CSV (no user notification)
+                # Save to master CSV and create individual report
                 try:
-                    save_user_data_to_master_csv(user_data)
-                except Exception:
-                    pass  # Silently ignore errors in data saving
+                    # Save to master CSV
+                    master_df, master_path = save_user_data_to_master_csv(user_data)
+                    
+                    # Create individual CSV report
+                    user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
+                    
+                    # Provide download buttons
+                    st.subheader("📥 Download Reports")
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        # User info CSV download
+                        user_csv = user_info_df.to_csv(index=False)
+                        st.download_button(
+                            label="📋 Download User Info CSV",
+                            data=user_csv,
+                            file_name=f"{report_name}_user_info.csv",
+                            mime="text/csv"
+                        )
+                    
+                    with col2:
+                        # Recommendations CSV download
+                        recommendations_csv = recommendations_df.to_csv(index=False)
+                        st.download_button(
+                            label="🎯 Download Recommendations CSV",
+                            data=recommendations_csv,
+                            file_name=f"{report_name}_recommendations.csv",
+                            mime="text/csv"
+                        )
+                    
+                    # Master CSV download (for admin)
+                    if master_df is not None:
+                        master_csv = master_df.to_csv(index=False)
+                        st.download_button(
+                            label="📊 Download Master Data CSV (All Users)",
+                            data=master_csv,
+                            file_name="master_user_data.csv",
+                            mime="text/csv"
+                        )
+                        
+                        st.success(f"✅ Data saved successfully! Master CSV has {len(master_df)} total records.")
+                    else:
+                        st.warning("⚠️ Individual reports created, but master CSV update failed.")
+                        
+                except Exception as save_error:
+                    st.error(f"❌ Error saving data: {str(save_error)}")
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")

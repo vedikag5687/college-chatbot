@@ -6,7 +6,7 @@ from datetime import datetime
 import os
 
 def load_sheets():
-    """Load data from Google Sheets (this part stays the same for data loading)"""
+    """Load data from Google Sheets with improved column cleaning"""
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     creds = ServiceAccountCredentials.from_json_keyfile_dict(st.secrets["gcp_service_account"], scope)
 
@@ -18,23 +18,65 @@ def load_sheets():
 
     data = {}
     for name in sheet_names:
-        worksheet = spreadsheet.worksheet(name)
-        df = pd.DataFrame(worksheet.get_all_records())
+        try:
+            worksheet = spreadsheet.worksheet(name)
+            df = pd.DataFrame(worksheet.get_all_records())
 
-        # Clean column names
-        df.columns = (
-            df.columns
-            .str.encode('ascii', 'ignore').str.decode('ascii')
-            .str.strip()
-            .str.lower()
-            .str.replace(r'\s+', ' ', regex=True)
-        )
+            print(f"[DEBUG] Original columns in '{name}':", df.columns.tolist())
+            
+            # Clean column names more carefully
+            df.columns = (
+                df.columns
+                .str.encode('ascii', 'ignore').str.decode('ascii')
+                .str.strip()
+                .str.lower()
+                .str.replace(r'\s+', ' ', regex=True)
+                .str.replace(r'[^\w\s]', '', regex=True)  # Remove special characters
+            )
 
-        # Clean "close rank"
-        df['close rank'] = pd.to_numeric(df['close rank'], errors='coerce')
+            print(f"[DEBUG] Cleaned columns in '{name}':", df.columns.tolist())
+            
+            # Handle different possible column names for close rank
+            close_rank_columns = ['close rank', 'closerank', 'close_rank', 'closing rank', 'closingrank']
+            close_rank_col = None
+            
+            for col in close_rank_columns:
+                if col in df.columns:
+                    close_rank_col = col
+                    break
+            
+            if close_rank_col is None:
+                # Try to find column containing 'rank' and 'close'
+                for col in df.columns:
+                    if 'close' in col and 'rank' in col:
+                        close_rank_col = col
+                        break
+            
+            if close_rank_col is None:
+                print(f"[ERROR] Could not find close rank column in {name}")
+                print(f"Available columns: {df.columns.tolist()}")
+                continue
+            
+            # Rename to standard name
+            df = df.rename(columns={close_rank_col: 'close rank'})
+            
+            # Clean and convert close rank to numeric
+            df['close rank'] = pd.to_numeric(df['close rank'], errors='coerce')
+            
+            # Remove rows with invalid close rank
+            df = df.dropna(subset=['close rank'])
+            
+            # Ensure close rank is positive
+            df = df[df['close rank'] > 0]
 
-        print(f"[DEBUG] Cleaned Columns in '{name}':", df.columns.tolist())
-        data[name.lower()] = df.dropna(subset=['close rank'])
+            print(f"[DEBUG] Final shape for '{name}': {df.shape}")
+            print(f"[DEBUG] Close rank range: {df['close rank'].min()} - {df['close rank'].max()}")
+            
+            data[name.lower()] = df
+
+        except Exception as e:
+            print(f"[ERROR] Failed to load sheet '{name}': {str(e)}")
+            continue
 
     return data
 
@@ -42,7 +84,7 @@ def create_user_csv_report(user_data, nits_df, iiits_df):
     """Create CSV files for user data and recommendations"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_name = f"JEE_Recommendations_{user_data['name']}_{timestamp}"
+        report_name = f"JEE_Recommendations_{user_data['name'].replace(' ', '_')}_{timestamp}"
         
         # Create user information DataFrame
         user_info_data = {
@@ -95,13 +137,26 @@ def create_user_csv_report(user_data, nits_df, iiits_df):
         
         recommendations_df = pd.DataFrame(combined_recommendations)
         
+        # Save individual user report
+        try:
+            user_info_filename = f"{report_name}_user_info.csv"
+            recommendations_filename = f"{report_name}_recommendations.csv"
+            
+            user_info_df.to_csv(user_info_filename, index=False)
+            recommendations_df.to_csv(recommendations_filename, index=False)
+            
+            print(f"[INFO] Individual reports saved: {user_info_filename}, {recommendations_filename}")
+            
+        except Exception as e:
+            print(f"[WARNING] Could not save individual reports: {str(e)}")
+        
         return user_info_df, recommendations_df, report_name
         
     except Exception as e:
         raise Exception(f"Failed to create CSV report: {str(e)}")
 
 def save_user_data_to_master_csv(user_data):
-    """Save user data to a master tracking CSV file and auto-update it"""
+    """Save user data to a master tracking CSV file with better error handling"""
     try:
         timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
@@ -123,24 +178,34 @@ def save_user_data_to_master_csv(user_data):
         # Define the master CSV file path
         master_csv_path = "master_user_data.csv"
         
-        # Check if master CSV file exists
-        if os.path.exists(master_csv_path):
-            # Read existing data
-            existing_df = pd.read_csv(master_csv_path)
-            # Add new row
-            new_row_df = pd.DataFrame([new_user_data])
-            updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
-        else:
-            # Create new DataFrame if file doesn't exist
-            updated_df = pd.DataFrame([new_user_data])
-        
-        # Save updated data back to CSV
-        updated_df.to_csv(master_csv_path, index=False)
-        
-        return updated_df, master_csv_path
+        try:
+            # Check if master CSV file exists
+            if os.path.exists(master_csv_path):
+                # Read existing data
+                existing_df = pd.read_csv(master_csv_path)
+                # Add new row
+                new_row_df = pd.DataFrame([new_user_data])
+                updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
+            else:
+                # Create new DataFrame if file doesn't exist
+                updated_df = pd.DataFrame([new_user_data])
+            
+            # Save updated data back to CSV
+            updated_df.to_csv(master_csv_path, index=False)
+            print(f"[INFO] Master CSV updated successfully: {master_csv_path}")
+            print(f"[INFO] Total records in master CSV: {len(updated_df)}")
+            
+            return updated_df, master_csv_path
+            
+        except PermissionError:
+            print(f"[ERROR] Permission denied when writing to {master_csv_path}")
+            return None, None
+        except Exception as e:
+            print(f"[ERROR] Failed to write master CSV: {str(e)}")
+            return None, None
         
     except Exception as e:
-        print(f"Warning: Could not update master CSV: {str(e)}")
+        print(f"[ERROR] Failed to prepare user data for CSV: {str(e)}")
         return None, None
 
 def get_master_csv_download():
@@ -148,21 +213,26 @@ def get_master_csv_download():
     try:
         master_csv_path = "master_user_data.csv"
         if os.path.exists(master_csv_path):
-            with open(master_csv_path, 'r') as f:
+            with open(master_csv_path, 'r', encoding='utf-8') as f:
                 return f.read()
         else:
+            print(f"[WARNING] Master CSV file not found: {master_csv_path}")
             return None
     except Exception as e:
-        print(f"Error reading master CSV: {str(e)}")
+        print(f"[ERROR] Error reading master CSV: {str(e)}")
         return None
 
 # Legacy function for backward compatibility
 def create_user_sheet_and_save_data(user_data, nits_df, iiits_df):
     """Legacy function - now returns CSV data instead of Google Sheet"""
-    user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
-    
-    # Also save to master CSV
-    save_user_data_to_master_csv(user_data)
-    
-    # Return a fake URL and the report name for compatibility
-    return "CSV_REPORT_GENERATED", report_name
+    try:
+        user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
+        
+        # Also save to master CSV
+        save_user_data_to_master_csv(user_data)
+        
+        # Return a fake URL and the report name for compatibility
+        return "CSV_REPORT_GENERATED", report_name
+    except Exception as e:
+        print(f"[ERROR] Legacy function failed: {str(e)}")
+        return "ERROR", "failed_report"
