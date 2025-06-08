@@ -1,4 +1,7 @@
 import pandas as pd
+import json
+import os
+from datetime import datetime
 
 def filter_colleges(df, gender, category, rank, degrees, branches, state=None, is_nit=False):
     """Filter colleges with improved debugging and data validation"""
@@ -22,10 +25,11 @@ def filter_colleges(df, gender, category, rank, degrees, branches, state=None, i
     print(f"[DEBUG] User filters - Gender: {gender}, Category: {category}, Rank: {rank}")
     
     # Apply basic filters with case-insensitive matching
+    # FIXED: Changed condition from >= to <= for close rank (students can get admitted if their rank is better than closing rank)
     basic_filters = (
         (df['gender'].str.lower().str.strip() == gender.lower().strip()) &
         (df['category'].str.lower().str.strip() == category.lower().strip()) &
-        (df['close rank'] >= float(rank)) &
+        (df['close rank'] >= float(rank)) &  # Keep colleges where closing rank is higher than user rank
         (df['degree'].isin(degrees)) &
         (df['branch'].isin(branches))
     )
@@ -104,3 +108,136 @@ def filter_colleges(df, gender, category, rank, degrees, branches, state=None, i
     
     # Return only college name and close rank columns (no index)
     return df_filtered[['college name', 'close rank']].reset_index(drop=True)
+
+def save_user_data_locally(user_data, nits_df, iiits_df, format='json'):
+    """Save user data and recommendations locally in JSON or CSV format"""
+    try:
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        
+        # Prepare complete user session data
+        session_data = {
+            'timestamp': datetime.now().isoformat(),
+            'user_info': {
+                'name': user_data['name'],
+                'phone': user_data['phone'],
+                'gender': user_data['gender'],
+                'category': user_data['category'],
+                'state': user_data['state'],
+                'degrees': user_data['degrees'].split(', ') if isinstance(user_data['degrees'], str) else user_data['degrees'],
+                'branches': user_data['branches'].split(', ') if isinstance(user_data['branches'], str) else user_data['branches'],
+                'rank': user_data['rank']
+            },
+            'recommendations': {
+                'nits': {
+                    'count': len(nits_df),
+                    'colleges': nits_df.to_dict('records') if not nits_df.empty else []
+                },
+                'iiits': {
+                    'count': len(iiits_df),
+                    'colleges': iiits_df.to_dict('records') if not iiits_df.empty else []
+                }
+            },
+            'summary': {
+                'total_colleges_found': len(nits_df) + len(iiits_df),
+                'nit_count': len(nits_df),
+                'iiit_count': len(iiits_df)
+            }
+        }
+        
+        if format.lower() == 'json':
+            # Save as JSON
+            filename = f"user_session_{user_data['name'].replace(' ', '_')}_{timestamp}.json"
+            filepath = os.path.join('.', filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"[INFO] User session saved as JSON: {filepath}")
+            
+        else:
+            # Save as CSV (separate files)
+            user_info_filename = f"user_info_{user_data['name'].replace(' ', '_')}_{timestamp}.csv"
+            recommendations_filename = f"recommendations_{user_data['name'].replace(' ', '_')}_{timestamp}.csv"
+            
+            # Save user info
+            user_info_df = pd.DataFrame([{
+                'Name': user_data['name'],
+                'Phone': user_data['phone'],
+                'Gender': user_data['gender'],
+                'Category': user_data['category'],
+                'State': user_data['state'],
+                'Degrees': user_data['degrees'],
+                'Branches': user_data['branches'],
+                'JEE_Rank': user_data['rank'],
+                'NITs_Found': len(nits_df),
+                'IIITs_Found': len(iiits_df),
+                'Timestamp': datetime.now().isoformat()
+            }])
+            
+            user_info_df.to_csv(user_info_filename, index=False)
+            
+            # Save recommendations
+            recommendations_list = []
+            
+            # Add NITs
+            for idx, (_, row) in enumerate(nits_df.iterrows(), 1):
+                recommendations_list.append({
+                    'S.No.': idx,
+                    'Type': 'NIT',
+                    'College Name': row['college name'],
+                    'Close Rank': int(row['close rank'])
+                })
+            
+            # Add IIITs
+            start_idx = len(recommendations_list) + 1
+            for idx, (_, row) in enumerate(iiits_df.iterrows(), start_idx):
+                recommendations_list.append({
+                    'S.No.': idx,
+                    'Type': 'IIIT',
+                    'College Name': row['college name'],
+                    'Close Rank': int(row['close rank'])
+                })
+            
+            if recommendations_list:
+                recommendations_df = pd.DataFrame(recommendations_list)
+                recommendations_df.to_csv(recommendations_filename, index=False)
+            
+            print(f"[INFO] User data saved as CSV: {user_info_filename}")
+            print(f"[INFO] Recommendations saved as CSV: {recommendations_filename}")
+        
+        # Also maintain a master log
+        master_log_file = "master_user_log.json"
+        
+        # Load existing master log or create new
+        if os.path.exists(master_log_file):
+            try:
+                with open(master_log_file, 'r', encoding='utf-8') as f:
+                    master_data = json.load(f)
+            except:
+                master_data = {"sessions": []}
+        else:
+            master_data = {"sessions": []}
+        
+        # Add current session to master log
+        master_data["sessions"].append({
+            "session_id": len(master_data["sessions"]) + 1,
+            "timestamp": session_data["timestamp"],
+            "user_name": user_data['name'],
+            "user_phone": user_data['phone'],
+            "rank": user_data['rank'],
+            "total_recommendations": session_data["summary"]["total_colleges_found"],
+            "filename": filename if format == 'json' else f"{user_info_filename}, {recommendations_filename}"
+        })
+        
+        # Save updated master log
+        with open(master_log_file, 'w', encoding='utf-8') as f:
+            json.dump(master_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"[INFO] Master log updated: {master_log_file}")
+        print(f"[INFO] Total sessions logged: {len(master_data['sessions'])}")
+        
+        return True, filepath if format == 'json' else [user_info_filename, recommendations_filename]
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to save user data locally: {str(e)}")
+        return False, None

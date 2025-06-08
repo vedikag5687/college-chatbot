@@ -4,6 +4,7 @@ import pandas as pd
 import streamlit as st
 from datetime import datetime
 import os
+import json
 
 def load_sheets():
     """Load data from Google Sheets with improved column cleaning"""
@@ -23,54 +24,56 @@ def load_sheets():
             df = pd.DataFrame(worksheet.get_all_records())
 
             print(f"[DEBUG] Original columns in '{name}':", df.columns.tolist())
+            print(f"[DEBUG] Original shape: {df.shape}")
             
-            # Clean column names more carefully
-            df.columns = (
-                df.columns
-                .str.encode('ascii', 'ignore').str.decode('ascii')
-                .str.strip()
-                .str.lower()
-                .str.replace(r'\s+', ' ', regex=True)
-                .str.replace(r'[^\w\s]', '', regex=True)  # Remove special characters
-            )
+            # Clean column names to match your Google Sheet structure
+            df.columns = df.columns.str.strip().str.lower()
+            
+            # Map column names based on your sheet structure
+            column_mapping = {
+                'open rank': 'open rank',
+                'close rank': 'close rank', 
+                'college name': 'college name',
+                'college state': 'college state',
+                'branch': 'branch',
+                'degree': 'degree',
+                'quota': 'quota',
+                'gender': 'gender'
+            }
+            
+            # Rename columns if they exist
+            existing_mapping = {k: v for k, v in column_mapping.items() if k in df.columns}
+            df = df.rename(columns=existing_mapping)
 
             print(f"[DEBUG] Cleaned columns in '{name}':", df.columns.tolist())
             
-            # Handle different possible column names for close rank
-            close_rank_columns = ['close rank', 'closerank', 'close_rank', 'closing rank', 'closingrank']
-            close_rank_col = None
-            
-            for col in close_rank_columns:
-                if col in df.columns:
-                    close_rank_col = col
-                    break
-            
-            if close_rank_col is None:
-                # Try to find column containing 'rank' and 'close'
-                for col in df.columns:
-                    if 'close' in col and 'rank' in col:
-                        close_rank_col = col
-                        break
-            
-            if close_rank_col is None:
-                print(f"[ERROR] Could not find close rank column in {name}")
+            # Ensure we have the essential columns
+            if 'close rank' not in df.columns:
+                print(f"[ERROR] 'close rank' column not found in {name}")
                 print(f"Available columns: {df.columns.tolist()}")
                 continue
-            
-            # Rename to standard name
-            df = df.rename(columns={close_rank_col: 'close rank'})
+                
+            if 'college name' not in df.columns:
+                print(f"[ERROR] 'college name' column not found in {name}")
+                print(f"Available columns: {df.columns.tolist()}")
+                continue
             
             # Clean and convert close rank to numeric
             df['close rank'] = pd.to_numeric(df['close rank'], errors='coerce')
             
             # Remove rows with invalid close rank
+            original_len = len(df)
             df = df.dropna(subset=['close rank'])
-            
-            # Ensure close rank is positive
             df = df[df['close rank'] > 0]
+            print(f"[DEBUG] Removed {original_len - len(df)} rows with invalid close rank")
+            
+            # Remove duplicate entries
+            df = df.drop_duplicates()
 
             print(f"[DEBUG] Final shape for '{name}': {df.shape}")
-            print(f"[DEBUG] Close rank range: {df['close rank'].min()} - {df['close rank'].max()}")
+            if not df.empty:
+                print(f"[DEBUG] Close rank range: {df['close rank'].min()} - {df['close rank'].max()}")
+                print(f"[DEBUG] Sample college names: {df['college name'].head(3).tolist()}")
             
             data[name.lower()] = df
 
@@ -80,87 +83,115 @@ def load_sheets():
 
     return data
 
-def create_user_csv_report(user_data, nits_df, iiits_df):
-    """Create CSV files for user data and recommendations"""
+def save_user_data_locally(user_data, nits_df, iiits_df, format='json'):
+    """Save user data and recommendations locally in the project folder"""
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        report_name = f"JEE_Recommendations_{user_data['name'].replace(' ', '_')}_{timestamp}"
         
-        # Create user information DataFrame
-        user_info_data = {
-            'Field': [
-                'Name', 'Phone', 'Gender', 'Category', 'Home State',
-                'Selected Degrees', 'Selected Branches', 'JEE Mains Rank',
-                'NITs Found', 'IIITs Found', 'Generated On'
-            ],
-            'Value': [
-                user_data['name'],
-                user_data['phone'],
-                user_data['gender'],
-                user_data['category'],
-                user_data['state'],
-                user_data['degrees'],
-                user_data['branches'],
-                str(user_data['rank']),
-                str(user_data['nit_count']),
-                str(user_data['iiit_count']),
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            ]
+        # Prepare complete user session data
+        session_data = {
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'user_info': {
+                'name': user_data['name'],
+                'phone': user_data['phone'],
+                'gender': user_data['gender'],
+                'category': user_data['category'],
+                'state': user_data['state'],
+                'degrees': user_data['degrees'],
+                'branches': user_data['branches'],
+                'rank': user_data['rank']
+            },
+            'recommendations': {
+                'nits': [],
+                'iiits': []
+            },
+            'summary': {
+                'total_nits': len(nits_df),
+                'total_iiits': len(iiits_df),
+                'total_colleges': len(nits_df) + len(iiits_df)
+            }
         }
-        user_info_df = pd.DataFrame(user_info_data)
-        
-        # Create combined recommendations DataFrame
-        combined_recommendations = []
         
         # Add NIT recommendations
         if not nits_df.empty:
-            for idx, (_, row) in enumerate(nits_df.iterrows(), 1):
-                combined_recommendations.append({
-                    'S.No.': idx,
-                    'Type': 'NIT',
-                    'College Name': row['college name'],
-                    'Close Rank': int(row['close rank']),
-                    'Rank Difference': int(row['close rank']) - user_data['rank']
+            for _, row in nits_df.iterrows():
+                session_data['recommendations']['nits'].append({
+                    'college_name': row['college name'],
+                    'close_rank': int(row['close rank'])
                 })
         
         # Add IIIT recommendations
         if not iiits_df.empty:
-            start_idx = len(combined_recommendations) + 1
-            for idx, (_, row) in enumerate(iiits_df.iterrows(), start_idx):
-                combined_recommendations.append({
-                    'S.No.': idx,
-                    'Type': 'IIIT',
-                    'College Name': row['college name'],
-                    'Close Rank': int(row['close rank']),
-                    'Rank Difference': int(row['close rank']) - user_data['rank']
+            for _, row in iiits_df.iterrows():
+                session_data['recommendations']['iiits'].append({
+                    'college_name': row['college name'],
+                    'close_rank': int(row['close rank'])
                 })
         
-        recommendations_df = pd.DataFrame(combined_recommendations)
+        # Save based on format preference
+        if format.lower() == 'json':
+            filename = f"user_session_{user_data['name'].replace(' ', '_')}_{timestamp}.json"
+            filepath = os.path.join(os.getcwd(), filename)
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(session_data, f, indent=2, ensure_ascii=False)
+            
+            print(f"[INFO] Session data saved to: {filepath}")
+            
+        else:  # CSV format
+            # Save user info
+            user_info_df = pd.DataFrame([{
+                'Name': user_data['name'],
+                'Phone': user_data['phone'],
+                'Gender': user_data['gender'],
+                'Category': user_data['category'],
+                'State': user_data['state'],
+                'Degrees': user_data['degrees'],
+                'Branches': user_data['branches'],
+                'JEE_Rank': user_data['rank'],
+                'NITs_Found': len(nits_df),
+                'IIITs_Found': len(iiits_df),
+                'Timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            }])
+            
+            filename = f"user_session_{user_data['name'].replace(' ', '_')}_{timestamp}.csv"
+            filepath = os.path.join(os.getcwd(), filename)
+            user_info_df.to_csv(filepath, index=False)
+            print(f"[INFO] Session data saved to: {filepath}")
         
-        # Save individual user report
-        try:
-            user_info_filename = f"{report_name}_user_info.csv"
-            recommendations_filename = f"{report_name}_recommendations.csv"
-            
-            user_info_df.to_csv(user_info_filename, index=False)
-            recommendations_df.to_csv(recommendations_filename, index=False)
-            
-            print(f"[INFO] Individual reports saved: {user_info_filename}, {recommendations_filename}")
-            
-        except Exception as e:
-            print(f"[WARNING] Could not save individual reports: {str(e)}")
+        # Also maintain a master log file
+        master_filename = "master_user_log.json"
+        master_filepath = os.path.join(os.getcwd(), master_filename)
         
-        return user_info_df, recommendations_df, report_name
+        # Load existing master data or create new
+        if os.path.exists(master_filepath):
+            with open(master_filepath, 'r', encoding='utf-8') as f:
+                master_data = json.load(f)
+        else:
+            master_data = {'sessions': []}
+        
+        # Add current session to master
+        master_data['sessions'].append(session_data)
+        
+        # Save updated master data
+        with open(master_filepath, 'w', encoding='utf-8') as f:
+            json.dump(master_data, f, indent=2, ensure_ascii=False)
+        
+        print(f"[INFO] Master log updated: {master_filepath}")
+        print(f"[INFO] Total sessions logged: {len(master_data['sessions'])}")
+        
+        return filepath, master_filepath
         
     except Exception as e:
-        raise Exception(f"Failed to create CSV report: {str(e)}")
+        print(f"[ERROR] Failed to save user data: {str(e)}")
+        return None, None
 
+# Keep this function for backward compatibility but make it save locally
 def save_user_data_to_master_csv(user_data):
-    """Save user data to a master tracking CSV file with better error handling"""
+    """Save user data to local master CSV for backward compatibility"""
     try:
         timestamp_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         
-        # Create new user data entry
         new_user_data = {
             'Timestamp': timestamp_str,
             'Name': user_data['name'],
@@ -175,64 +206,35 @@ def save_user_data_to_master_csv(user_data):
             'IIITs_Found': user_data['iiit_count']
         }
         
-        # Define the master CSV file path
-        master_csv_path = "master_user_data.csv"
+        master_csv_path = os.path.join(os.getcwd(), "master_user_data.csv")
         
         try:
-            # Check if master CSV file exists
             if os.path.exists(master_csv_path):
-                # Read existing data
                 existing_df = pd.read_csv(master_csv_path)
-                # Add new row
                 new_row_df = pd.DataFrame([new_user_data])
                 updated_df = pd.concat([existing_df, new_row_df], ignore_index=True)
             else:
-                # Create new DataFrame if file doesn't exist
                 updated_df = pd.DataFrame([new_user_data])
             
-            # Save updated data back to CSV
             updated_df.to_csv(master_csv_path, index=False)
-            print(f"[INFO] Master CSV updated successfully: {master_csv_path}")
-            print(f"[INFO] Total records in master CSV: {len(updated_df)}")
+            print(f"[INFO] Master CSV updated: {master_csv_path}")
             
             return updated_df, master_csv_path
             
-        except PermissionError:
-            print(f"[ERROR] Permission denied when writing to {master_csv_path}")
-            return None, None
         except Exception as e:
             print(f"[ERROR] Failed to write master CSV: {str(e)}")
             return None, None
         
     except Exception as e:
-        print(f"[ERROR] Failed to prepare user data for CSV: {str(e)}")
+        print(f"[ERROR] Failed to prepare CSV data: {str(e)}")
         return None, None
 
-def get_master_csv_download():
-    """Get the master CSV file for download"""
-    try:
-        master_csv_path = "master_user_data.csv"
-        if os.path.exists(master_csv_path):
-            with open(master_csv_path, 'r', encoding='utf-8') as f:
-                return f.read()
-        else:
-            print(f"[WARNING] Master CSV file not found: {master_csv_path}")
-            return None
-    except Exception as e:
-        print(f"[ERROR] Error reading master CSV: {str(e)}")
-        return None
+# Remove the Google Sheets creation functions since we're saving locally now
+def create_user_csv_report(user_data, nits_df, iiits_df):
+    """Create local CSV report"""
+    return save_user_data_locally(user_data, nits_df, iiits_df, format='csv')
 
-# Legacy function for backward compatibility
 def create_user_sheet_and_save_data(user_data, nits_df, iiits_df):
-    """Legacy function - now returns CSV data instead of Google Sheet"""
-    try:
-        user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
-        
-        # Also save to master CSV
-        save_user_data_to_master_csv(user_data)
-        
-        # Return a fake URL and the report name for compatibility
-        return "CSV_REPORT_GENERATED", report_name
-    except Exception as e:
-        print(f"[ERROR] Legacy function failed: {str(e)}")
-        return "ERROR", "failed_report"
+    """Legacy function - now saves locally"""
+    filepath, master_path = save_user_data_locally(user_data, nits_df, iiits_df)
+    return "LOCAL_FILE_SAVED", filepath if filepath else "failed_report"

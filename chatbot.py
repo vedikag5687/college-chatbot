@@ -1,4 +1,4 @@
-from data_loader import load_sheets, save_user_data_to_master_csv
+from data_loader import load_sheets, save_user_data_locally
 from recommender import filter_colleges
 import pandas as pd
 from datetime import datetime
@@ -56,34 +56,34 @@ def get_multiple_choice(prompt, options):
             print("Please enter valid numbers separated by commas.")
 
 def display_results(nits_df, iiits_df, user_data):
-    """Display the filtered results"""
+    """Display the filtered results - simplified to show only college name and close rank"""
     print("\n" + "="*80)
     print("🎯 COLLEGE RECOMMENDATIONS")
     print("="*80)
     
     # Display NITs
     print("\n🟢 NITs (National Institutes of Technology)")
-    print("-" * 50)
+    print("-" * 60)
     if nits_df.empty:
         print("❌ No NITs found matching your criteria.")
     else:
         print(f"✅ Found {len(nits_df)} NIT options:")
-        print(f"{'S.No.':<5} {'College Name':<50} {'Close Rank':<10}")
-        print("-" * 70)
+        print(f"{'S.No.':<5} {'College Name':<40} {'Close Rank':<12}")
+        print("-" * 60)
         for idx, (_, row) in enumerate(nits_df.iterrows(), 1):
-            print(f"{idx:<5} {row['college name'][:47]:<50} {int(row['close rank']):<10}")
+            print(f"{idx:<5} {row['college name'][:37]:<40} {int(row['close rank']):<12}")
     
     # Display IIITs
     print("\n🟣 IIITs (Indian Institutes of Information Technology)")
-    print("-" * 50)
+    print("-" * 60)
     if iiits_df.empty:
         print("❌ No IIITs found matching your criteria.")
     else:
         print(f"✅ Found {len(iiits_df)} IIIT options:")
-        print(f"{'S.No.':<5} {'College Name':<50} {'Close Rank':<10}")
-        print("-" * 70)
+        print(f"{'S.No.':<5} {'College Name':<40} {'Close Rank':<12}")
+        print("-" * 60)
         for idx, (_, row) in enumerate(iiits_df.iterrows(), 1):
-            print(f"{idx:<5} {row['college name'][:47]:<50} {int(row['close rank']):<10}")
+            print(f"{idx:<5} {row['college name'][:37]:<40} {int(row['close rank']):<12}")
 
 def run_bot():
     print("="*80)
@@ -247,10 +247,11 @@ def run_bot():
         print("✅ Data loaded successfully!")
         
         print("\n🔍 Filtering colleges based on your preferences...")
+        print(f"[DEBUG] Looking for colleges with closing rank >= {rank}")
         
         # Filter NITs with state-based quota filtering
         nits_df = filter_colleges(
-            sheets["nits round 5"],
+            sheets.get("nits round 5"),
             gender,
             category,
             rank,
@@ -262,7 +263,7 @@ def run_bot():
 
         # Filter IIITs (no state-based filtering)
         iiits_df = filter_colleges(
-            sheets["iiits round 5"],
+            sheets.get("iiits round 5"),
             gender,
             category,
             rank,
@@ -289,11 +290,13 @@ def run_bot():
         # Display results
         display_results(nits_df, iiits_df, user_data)
         
-        # Silently save to master CSV (no user notification)
+        # Save data locally
         try:
-            save_user_data_to_master_csv(user_data)
-        except Exception:
-            pass  # Silently ignore errors in data saving
+            session_file, master_file = save_user_data_locally(user_data, nits_df, iiits_df, format='json')
+            if session_file:
+                print(f"\n💾 Session data saved locally: {session_file}")
+        except Exception as e:
+            print(f"\n⚠️ Warning: Could not save session data: {str(e)}")
         
         # Summary
         print("\n" + "="*80)

@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets, save_user_data_to_master_csv, create_user_csv_report
-from recommender import filter_colleges
+from data_loader import load_sheets
+from recommender import filter_colleges, save_user_data_locally
 from datetime import datetime
-import io
+import json
 
 st.title("🎓 JEE College Recommendation Bot")
 
@@ -141,6 +141,9 @@ branches = st.sidebar.multiselect("Select Preferred Branch(es)", branch_options)
 
 rank = st.sidebar.number_input("Enter your JEE Mains Rank", min_value=1, value=10000)
 
+# File format selection
+save_format = st.sidebar.selectbox("Choose save format", ["JSON", "CSV"])
+
 if st.sidebar.button("🔍 Get Recommendations"):
     if not name or not phone:
         st.error("❌ Please enter your Name and Phone Number.")
@@ -150,11 +153,6 @@ if st.sidebar.button("🔍 Get Recommendations"):
         with st.spinner("📥 Loading and filtering colleges..."):
             try:
                 sheets = load_sheets()
-                
-                # Debug: Show what sheets were loaded
-                st.write("📊 **Debug Info:**")
-                for sheet_name, df in sheets.items():
-                    st.write(f"- {sheet_name}: {len(df)} records")
                 
                 # Filter NITs with State & Quota prioritization
                 nits_df = filter_colleges(
@@ -182,7 +180,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
 
                 st.success("✅ Recommendations generated successfully!")
                 
-                # Display results
+                # Display results - ONLY College Name and Close Rank
                 col1, col2 = st.columns(2)
                 
                 with col1:
@@ -191,15 +189,14 @@ if st.sidebar.button("🔍 Get Recommendations"):
                         st.warning("No NITs found matching your criteria.")
                         st.info("💡 Try adjusting your preferences or rank range.")
                     else:
-                        # Add rank difference column for better insight
+                        # Clean display with only College Name and Close Rank
                         nits_display = nits_df.copy()
-                        nits_display['Rank Difference'] = nits_display['close rank'] - rank
                         nits_display['Close Rank'] = nits_display['close rank'].astype(int)
-                        nits_display = nits_display[['college name', 'Close Rank', 'Rank Difference']]
-                        nits_display.columns = ['College Name', 'Close Rank', 'Rank Difference']
+                        nits_display = nits_display[['college name', 'Close Rank']]
+                        nits_display.columns = ['College Name', 'Close Rank']
                         
                         st.dataframe(nits_display, use_container_width=True, hide_index=True)
-                        st.info(f"Found {len(nits_df)} NIT options")
+                        st.info(f"✅ Found {len(nits_df)} NIT options")
 
                 with col2:
                     st.subheader("🟣 IIITs")
@@ -207,17 +204,16 @@ if st.sidebar.button("🔍 Get Recommendations"):
                         st.warning("No IIITs found matching your criteria.")
                         st.info("💡 Try adjusting your preferences or rank range.")
                     else:
-                        # Add rank difference column for better insight
+                        # Clean display with only College Name and Close Rank
                         iiits_display = iiits_df.copy()
-                        iiits_display['Rank Difference'] = iiits_display['close rank'] - rank
                         iiits_display['Close Rank'] = iiits_display['close rank'].astype(int)
-                        iiits_display = iiits_display[['college name', 'Close Rank', 'Rank Difference']]
-                        iiits_display.columns = ['College Name', 'Close Rank', 'Rank Difference']
+                        iiits_display = iiits_display[['college name', 'Close Rank']]
+                        iiits_display.columns = ['College Name', 'Close Rank']
                         
                         st.dataframe(iiits_display, use_container_width=True, hide_index=True)
-                        st.info(f"Found {len(iiits_df)} IIIT options")
+                        st.info(f"✅ Found {len(iiits_df)} IIIT options")
 
-                # Prepare user data and save
+                # Prepare user data
                 user_data = {
                     'name': name,
                     'phone': phone,
@@ -231,52 +227,43 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     'iiit_count': len(iiits_df)
                 }
                 
-                # Save to master CSV and create individual report
+                # Save data locally
                 try:
-                    # Save to master CSV
-                    master_df, master_path = save_user_data_to_master_csv(user_data)
+                    success, files = save_user_data_locally(user_data, nits_df, iiits_df, format=save_format.lower())
                     
-                    # Create individual CSV report
-                    user_info_df, recommendations_df, report_name = create_user_csv_report(user_data, nits_df, iiits_df)
-                    
-                    # Provide download buttons
-                    st.subheader("📥 Download Reports")
-                    
-                    col1, col2 = st.columns(2)
-                    
-                    with col1:
-                        # User info CSV download
-                        user_csv = user_info_df.to_csv(index=False)
-                        st.download_button(
-                            label="📋 Download User Info CSV",
-                            data=user_csv,
-                            file_name=f"{report_name}_user_info.csv",
-                            mime="text/csv"
-                        )
-                    
-                    with col2:
-                        # Recommendations CSV download
-                        recommendations_csv = recommendations_df.to_csv(index=False)
-                        st.download_button(
-                            label="🎯 Download Recommendations CSV",
-                            data=recommendations_csv,
-                            file_name=f"{report_name}_recommendations.csv",
-                            mime="text/csv"
-                        )
-                    
-                    # Master CSV download (for admin)
-                    if master_df is not None:
-                        master_csv = master_df.to_csv(index=False)
-                        st.download_button(
-                            label="📊 Download Master Data CSV (All Users)",
-                            data=master_csv,
-                            file_name="master_user_data.csv",
-                            mime="text/csv"
-                        )
+                    if success:
+                        st.success(f"✅ Data saved successfully in {save_format} format!")
                         
-                        st.success(f"✅ Data saved successfully! Master CSV has {len(master_df)} total records.")
+                        if save_format.lower() == 'json':
+                            st.info(f"📁 Saved as: {files}")
+                        else:
+                            st.info(f"📁 Saved as: {', '.join(files)}")
+                        
+                        # Show summary
+                        st.subheader("📊 Summary")
+                        col1, col2, col3 = st.columns(3)
+                        
+                        with col1:
+                            st.metric("👤 Your Rank", f"{rank:,}")
+                        
+                        with col2:
+                            st.metric("🟢 NITs Found", len(nits_df))
+                        
+                        with col3:
+                            st.metric("🟣 IIITs Found", len(iiits_df))
+                        
+                        st.info(f"📅 Generated on: {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}")
+                        
+                        # Show master log info
+                        try:
+                            with open("master_user_log.json", 'r') as f:
+                                master_log = json.load(f)
+                                st.info(f"📊 Total sessions recorded: {len(master_log['sessions'])}")
+                        except:
+                            pass
+                            
                     else:
-                        st.warning("⚠️ Individual reports created, but master CSV update failed.")
+                        st.error("❌ Failed to save data locally. Check console for details.")
                         
                 except Exception as save_error:
                     st.error(f"❌ Error saving data: {str(save_error)}")
@@ -287,4 +274,15 @@ if st.sidebar.button("🔍 Get Recommendations"):
 
 # Simple footer
 st.markdown("---")
+st.markdown("### 📁 Local File Storage")
+st.info("💾 All user data and recommendations are saved locally in your project folder.")
+st.markdown("**File locations:**")
+st.code("""
+📂 Project Folder/
+├── user_session_[Name]_[Timestamp].json     # Individual user session (JSON format)
+├── user_info_[Name]_[Timestamp].csv         # User information (CSV format)  
+├── recommendations_[Name]_[Timestamp].csv   # Recommendations (CSV format)
+└── master_user_log.json                     # Master log of all sessions
+""")
+
 st.markdown("**Thank you for using JEE College Recommendation System!**")
