@@ -1,17 +1,21 @@
 import streamlit as st
 import pandas as pd
-from data_loader import load_sheets
-from recommender import filter_colleges, save_user_data_locally
-from datetime import datetime
-import json
+from data_loader import load_sheets, save_user_data, save_user_chat_json
+from recommender import filter_colleges
 
 st.title("🎓 JEE College Recommendation Bot")
 
-# Clean introduction without technical details
+# Introduction
 st.markdown("""
 ### Hello! I can recommend colleges based on your JEE rank.
 
 **Currently supported:** JEE Mains based recommendations
+**Coming soon:** JEE Advanced based recommendations
+
+**New Features:**
+- ✅ College State filter for NITs (Home State: HS quota only, Other State: OS quota only)
+- ✅ Results sorted by close rank in ascending order
+- ✅ Complete chat history saved as JSON
 """)
 
 # --- Hardcoded Selections ---
@@ -126,11 +130,11 @@ branch_options = [
 ]
 
 # --- UI Inputs ---
-st.sidebar.header("📋 Personal Information")
+st.sidebar.header("Personal Information")
 name = st.sidebar.text_input("Enter your Name")
 phone = st.sidebar.text_input("Enter your Phone Number")
 
-st.sidebar.header("🎯 Your Preferences")
+st.sidebar.header("Your Preferences")
 
 gender = st.sidebar.selectbox("Select your Gender", gender_options)
 category = st.sidebar.selectbox("Select your Category", category_options)
@@ -141,8 +145,15 @@ branches = st.sidebar.multiselect("Select Preferred Branch(es)", branch_options)
 
 rank = st.sidebar.number_input("Enter your JEE Mains Rank", min_value=1, value=10000)
 
-# File format selection
-save_format = st.sidebar.selectbox("Choose save format", ["JSON", "CSV"])
+# Add info about the filtering logic
+st.sidebar.markdown("---")
+st.sidebar.info("""
+**NIT Filtering Logic:**
+- Home State colleges: Only HS quota seats
+- Other State colleges: Only OS quota seats
+- Your Rank ≤ Close Rank (you can get admission)
+- Results sorted by close rank (ascending)
+""")
 
 if st.sidebar.button("🔍 Get Recommendations"):
     if not name or not phone:
@@ -154,7 +165,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
             try:
                 sheets = load_sheets()
                 
-                # Filter NITs with State & Quota prioritization
+                # --- NITs with College State & Quota filtering ---
                 nits_df = filter_colleges(
                     sheets["nits round 5"],
                     gender,
@@ -166,7 +177,7 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     is_nit=True
                 )
 
-                # Filter IIITs without state sorting
+                # --- IIITs without state sorting (same logic as NITs but no state filter) ---
                 iiits_df = filter_colleges(
                     sheets["iiits round 5"],
                     gender,
@@ -174,44 +185,32 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     rank,
                     degrees,
                     branches,
-                    state=None,
+                    state=None,  # No state filtering for IIITs
                     is_nit=False
                 )
 
                 st.success("✅ Recommendations generated successfully!")
                 
-                # Display results - ONLY College Name and Close Rank
+                # Display results
                 col1, col2 = st.columns(2)
                 
                 with col1:
                     st.subheader("🟢 NITs")
                     if nits_df.empty:
                         st.warning("No NITs found matching your criteria.")
-                        st.info("💡 Try adjusting your preferences or rank range.")
                     else:
-                        # Clean display with only College Name and Close Rank
-                        nits_display = nits_df.copy()
-                        nits_display['Close Rank'] = nits_display['close rank'].astype(int)
-                        nits_display = nits_display[['college name', 'Close Rank']]
-                        nits_display.columns = ['College Name', 'Close Rank']
-                        
-                        st.dataframe(nits_display, use_container_width=True, hide_index=True)
-                        st.info(f"✅ Found {len(nits_df)} NIT options")
+                        # Display without index
+                        st.dataframe(nits_df, use_container_width=True, hide_index=True)
+                        st.info(f"Found {len(nits_df)} NIT options (sorted by close rank)")
 
                 with col2:
                     st.subheader("🟣 IIITs")
                     if iiits_df.empty:
                         st.warning("No IIITs found matching your criteria.")
-                        st.info("💡 Try adjusting your preferences or rank range.")
                     else:
-                        # Clean display with only College Name and Close Rank
-                        iiits_display = iiits_df.copy()
-                        iiits_display['Close Rank'] = iiits_display['close rank'].astype(int)
-                        iiits_display = iiits_display[['college name', 'Close Rank']]
-                        iiits_display.columns = ['College Name', 'Close Rank']
-                        
-                        st.dataframe(iiits_display, use_container_width=True, hide_index=True)
-                        st.info(f"✅ Found {len(iiits_df)} IIIT options")
+                        # Display without index
+                        st.dataframe(iiits_df, use_container_width=True, hide_index=True)
+                        st.info(f"Found {len(iiits_df)} IIIT options (sorted by close rank)")
 
                 # Prepare user data
                 user_data = {
@@ -227,62 +226,22 @@ if st.sidebar.button("🔍 Get Recommendations"):
                     'iiit_count': len(iiits_df)
                 }
                 
-                # Save data locally
+                # Save to Google Sheets
                 try:
-                    success, files = save_user_data_locally(user_data, nits_df, iiits_df, format=save_format.lower())
-                    
-                    if success:
-                        st.success(f"✅ Data saved successfully in {save_format} format!")
-                        
-                        if save_format.lower() == 'json':
-                            st.info(f"📁 Saved as: {files}")
-                        else:
-                            st.info(f"📁 Saved as: {', '.join(files)}")
-                        
-                        # Show summary
-                        st.subheader("📊 Summary")
-                        col1, col2, col3 = st.columns(3)
-                        
-                        with col1:
-                            st.metric("👤 Your Rank", f"{rank:,}")
-                        
-                        with col2:
-                            st.metric("🟢 NITs Found", len(nits_df))
-                        
-                        with col3:
-                            st.metric("🟣 IIITs Found", len(iiits_df))
-                        
-                        st.info(f"📅 Generated on: {datetime.now().strftime('%Y-%m-%d at %H:%M:%S')}")
-                        
-                        # Show master log info
-                        try:
-                            with open("master_user_log.json", 'r') as f:
-                                master_log = json.load(f)
-                                st.info(f"📊 Total sessions recorded: {len(master_log['sessions'])}")
-                        except:
-                            pass
-                            
-                    else:
-                        st.error("❌ Failed to save data locally. Check console for details.")
-                        
-                except Exception as save_error:
-                    st.error(f"❌ Error saving data: {str(save_error)}")
+                    save_user_data(user_data)
+                    st.success("✅ Your preferences have been saved to Google Sheets!")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not save to Google Sheets: {e}")
+                
+                # Save complete chat as JSON
+                try:
+                    json_filename = save_user_chat_json(user_data, nits_df, iiits_df)
+                    st.success(f"✅ Complete chat saved as: {json_filename}")
+                except Exception as e:
+                    st.warning(f"⚠️ Could not save chat JSON: {e}")
                         
             except Exception as e:
                 st.error(f"❌ Error occurred: {str(e)}")
-                st.error("Please check your data connection and try again.")
+                st.error("Please check your Google Sheets connection and data.")
 
-# Simple footer
-st.markdown("---")
-st.markdown("### 📁 Local File Storage")
-st.info("💾 All user data and recommendations are saved locally in your project folder.")
-st.markdown("**File locations:**")
-st.code("""
-📂 Project Folder/
-├── user_session_[Name]_[Timestamp].json     # Individual user session (JSON format)
-├── user_info_[Name]_[Timestamp].csv         # User information (CSV format)  
-├── recommendations_[Name]_[Timestamp].csv   # Recommendations (CSV format)
-└── master_user_log.json                     # Master log of all sessions
-""")
-
-st.markdown("**Thank you for using JEE College Recommendation System!**")
+# Add explanation sectio

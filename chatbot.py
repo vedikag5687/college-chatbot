@@ -1,108 +1,18 @@
-from data_loader import load_sheets, save_user_data_locally
+from data_loader import load_sheets, save_user_data
 from recommender import filter_colleges
-import pandas as pd
-from datetime import datetime
-
-def get_user_input(prompt, options=None):
-    """Helper function to get user input with validation"""
-    while True:
-        if options:
-            print("\nOptions:")
-            for i, option in enumerate(options, 1):
-                print(f"{i}. {option}")
-            
-            try:
-                choice = input(f"{prompt} (Enter number): ").strip()
-                choice_idx = int(choice) - 1
-                if 0 <= choice_idx < len(options):
-                    return options[choice_idx]
-                else:
-                    print(f"Please enter a number between 1 and {len(options)}")
-            except ValueError:
-                print("Please enter a valid number")
-        else:
-            result = input(f"{prompt}: ").strip()
-            if result:
-                return result
-            print("This field cannot be empty. Please try again.")
-
-def get_multiple_choice(prompt, options):
-    """Helper function to get multiple selections from user"""
-    print(f"\n{prompt}")
-    print("Options:")
-    for i, option in enumerate(options, 1):
-        print(f"{i}. {option}")
-    
-    while True:
-        try:
-            choices = input("\nEnter your choices (comma-separated numbers, e.g., 1,3,5): ").strip()
-            if not choices:
-                print("Please select at least one option.")
-                continue
-                
-            choice_indices = [int(x.strip()) - 1 for x in choices.split(',')]
-            selected_options = []
-            
-            for idx in choice_indices:
-                if 0 <= idx < len(options):
-                    selected_options.append(options[idx])
-                else:
-                    print(f"Invalid choice: {idx + 1}. Please try again.")
-                    break
-            else:
-                return selected_options
-                
-        except ValueError:
-            print("Please enter valid numbers separated by commas.")
-
-def display_results(nits_df, iiits_df, user_data):
-    """Display the filtered results - simplified to show only college name and close rank"""
-    print("\n" + "="*80)
-    print("🎯 COLLEGE RECOMMENDATIONS")
-    print("="*80)
-    
-    # Display NITs
-    print("\n🟢 NITs (National Institutes of Technology)")
-    print("-" * 60)
-    if nits_df.empty:
-        print("❌ No NITs found matching your criteria.")
-    else:
-        print(f"✅ Found {len(nits_df)} NIT options:")
-        print(f"{'S.No.':<5} {'College Name':<40} {'Close Rank':<12}")
-        print("-" * 60)
-        for idx, (_, row) in enumerate(nits_df.iterrows(), 1):
-            print(f"{idx:<5} {row['college name'][:37]:<40} {int(row['close rank']):<12}")
-    
-    # Display IIITs
-    print("\n🟣 IIITs (Indian Institutes of Information Technology)")
-    print("-" * 60)
-    if iiits_df.empty:
-        print("❌ No IIITs found matching your criteria.")
-    else:
-        print(f"✅ Found {len(iiits_df)} IIIT options:")
-        print(f"{'S.No.':<5} {'College Name':<40} {'Close Rank':<12}")
-        print("-" * 60)
-        for idx, (_, row) in enumerate(iiits_df.iterrows(), 1):
-            print(f"{idx:<5} {row['college name'][:37]:<40} {int(row['close rank']):<12}")
 
 def run_bot():
-    print("="*80)
-    print("🎓 JEE COLLEGE RECOMMENDATION BOT")
-    print("="*80)
     print("👋 Hello! I can recommend colleges based on your JEE rank.")
-    print("\nWhich exam would you like suggestions for?")
+    print("Which exam would you like suggestions for?")
     print("1. JEE Mains")
     print("2. JEE Advanced")
     
-    mode = input("\nEnter 1 or 2: ").strip()
+    mode = input("Enter 1 or 2: ").strip()
 
     if mode != "1":
-        print("\n❌ Currently, only JEE Mains-based recommendations are supported.")
-        print("🔜 JEE Advanced recommendations coming soon!")
+        print("Currently, only JEE Mains-based recommendations are supported.")
         return
 
-    print("\n✅ JEE Mains mode selected!")
-    
     # --- Hardcoded Options ---
     gender_options = ["Gender-Neutral", "Female-only (including Supernumerary)"]
     category_options = ["SC", "ST", "EWS", "EWS (PwD)", "OBC-NCL", "OBC-NCL (PwD)", "OPEN", "OPEN (PwD)", "SC (PwD)", "ST (PwD)"]
@@ -214,112 +124,132 @@ def run_bot():
         "VLSI Design and Technology"
     ]
 
-    # Collect user information
-    print("\n📋 PERSONAL INFORMATION")
-    print("-" * 30)
-    name = get_user_input("Enter your Name")
-    phone = get_user_input("Enter your Phone Number")
-    
-    print("\n🎯 PREFERENCES")
-    print("-" * 20)
-    gender = get_user_input("Select your Gender", gender_options)
-    category = get_user_input("Select your Category", category_options)
-    state = get_user_input("Select your Home State", state_options)
-    
-    degrees = get_multiple_choice("Select your Preferred Degree(s)", degree_options)
-    branches = get_multiple_choice("Select your Preferred Branch(es)", branch_options)
-    
-    # Get JEE rank
-    while True:
-        try:
-            rank = int(input("\nEnter your JEE Mains Rank: ").strip())
-            if rank > 0:
-                break
-            else:
-                print("Rank must be a positive number.")
-        except ValueError:
-            print("Please enter a valid number for rank.")
+    # --- User Personal Information ---
+    print("\n--- Personal Information ---")
+    name = input("Enter your Name: ").strip()
+    phone = input("Enter your Phone Number: ").strip()
 
-    # Load data and get recommendations
-    print("\n🔄 Loading college data...")
+    # --- User Inputs ---
+    print("\nSelect your Gender:")
+    for i, g in enumerate(gender_options, 1):
+        print(f"{i}. {g}")
+    try:
+        gender_choice = int(input("Enter choice (1 or 2): "))
+        gender = gender_options[gender_choice - 1]
+    except (ValueError, IndexError):
+        print("Invalid choice. Please restart.")
+        return
+
+    print("\nSelect your Category:")
+    for i, c in enumerate(category_options, 1):
+        print(f"{i}. {c}")
+    try:
+        category_choice = int(input(f"Enter choice (1 to {len(category_options)}): "))
+        category = category_options[category_choice - 1]
+    except (ValueError, IndexError):
+        print("Invalid choice. Please restart.")
+        return
+
+    print("\nSelect your Home State:")
+    for i, s in enumerate(state_options, 1):
+        print(f"{i}. {s}")
+    try:
+        state_choice = int(input(f"Enter choice (1 to {len(state_options)}): "))
+        state = state_options[state_choice - 1]
+    except (ValueError, IndexError):
+        print("Invalid choice. Please restart.")
+        return
+
+    print("\nSelect one or more Degrees (comma-separated index):")
+    for i, d in enumerate(degree_options, 1):
+        print(f"{i}. {d}")
+    try:
+        degree_indices = input("Enter choices (e.g. 1,3): ").split(",")
+        degrees = [degree_options[int(i.strip()) - 1] for i in degree_indices]
+    except (ValueError, IndexError):
+        print("Invalid degree selection. Please restart.")
+        return
+
+    print("\nSelect one or more Branches (comma-separated index):")
+    for i, b in enumerate(branch_options, 1):
+        print(f"{i}. {b}")
+    try:
+        branch_indices = input("Enter choices (e.g. 1,4): ").split(",")
+        branches = [branch_options[int(i.strip()) - 1] for i in branch_indices]
+    except (ValueError, IndexError):
+        print("Invalid branch selection. Please restart.")
+        return
+
+    try:
+        rank = int(input("\nEnter your JEE Mains rank: "))
+    except ValueError:
+        print("Invalid rank. Please enter a valid number.")
+        return
+
+    print("\n📥 Loading college data...")
     try:
         sheets = load_sheets()
-        print("✅ Data loaded successfully!")
-        
-        print("\n🔍 Filtering colleges based on your preferences...")
-        print(f"[DEBUG] Looking for colleges with closing rank >= {rank}")
-        
-        # Filter NITs with state-based quota filtering
-        nits_df = filter_colleges(
-            sheets.get("nits round 5"),
-            gender,
-            category,
-            rank,
-            degrees,
-            branches,
-            state=state,
-            is_nit=True
-        )
-
-        # Filter IIITs (no state-based filtering)
-        iiits_df = filter_colleges(
-            sheets.get("iiits round 5"),
-            gender,
-            category,
-            rank,
-            degrees,
-            branches,
-            state=None,
-            is_nit=False
-        )
-
-        # Prepare user data
-        user_data = {
-            'name': name,
-            'phone': phone,
-            'gender': gender,
-            'category': category,
-            'state': state,
-            'degrees': ', '.join(degrees),
-            'branches': ', '.join(branches),
-            'rank': rank,
-            'nit_count': len(nits_df),
-            'iiit_count': len(iiits_df)
-        }
-
-        # Display results
-        display_results(nits_df, iiits_df, user_data)
-        
-        # Save data locally
-        try:
-            session_file, master_file = save_user_data_locally(user_data, nits_df, iiits_df, format='json')
-            if session_file:
-                print(f"\n💾 Session data saved locally: {session_file}")
-        except Exception as e:
-            print(f"\n⚠️ Warning: Could not save session data: {str(e)}")
-        
-        # Summary
-        print("\n" + "="*80)
-        print("📊 SUMMARY")
-        print("="*80)
-        print(f"👤 Name: {name}")
-        print(f"🎯 JEE Mains Rank: {rank}")
-        print(f"🟢 NITs Found: {len(nits_df)}")
-        print(f"🟣 IIITs Found: {len(iiits_df)}")
-        print(f"📅 Generated On: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        
-        print("\n✅ Recommendation process completed!")
-        print("Thank you for using our recommendation system!")
-        
     except Exception as e:
-        print(f"\n❌ Error occurred: {str(e)}")
-        print("Please check your data connection and try again.")
+        print(f"Error loading data: {e}")
+        return
+
+    print("\n🔍 Filtering colleges based on your preferences...")
+    
+    # Filter NITs
+    nits_df = filter_colleges(
+        sheets["nits round 5"], 
+        gender, 
+        category, 
+        rank, 
+        degrees, 
+        branches, 
+        state=state, 
+        is_nit=True
+    )
+
+    # Filter IIITs
+    iiits_df = filter_colleges(
+        sheets["iiits round 5"], 
+        gender, 
+        category, 
+        rank, 
+        degrees, 
+        branches
+    )
+
+    print("\n🎯 College Recommendations Based on JEE Mains Rank:\n")
+
+    print("🟢 NITs ===")
+    if nits_df.empty:
+        print("No NITs found matching your criteria.")
+    else:
+        print(nits_df.to_string(index=False))
+
+    print("\n🟣 IIITs ===")
+    if iiits_df.empty:
+        print("No IIITs found matching your criteria.")
+    else:
+        print(iiits_df.to_string(index=False))
+
+    # Save user data to Google Sheets
+    user_data = {
+        'name': name,
+        'phone': phone,
+        'gender': gender,
+        'category': category,
+        'state': state,
+        'degrees': ', '.join(degrees),
+        'branches': ', '.join(branches),
+        'rank': rank,
+        'nit_count': len(nits_df),
+        'iiit_count': len(iiits_df)
+    }
+    
+    try:
+        save_user_data(user_data)
+        print("\n✅ Your preferences have been saved successfully!")
+    except Exception as e:
+        print(f"\n⚠️ Could not save data: {e}")
 
 if __name__ == "__main__":
-    try:
-        run_bot()
-    except KeyboardInterrupt:
-        print("\n\n👋 Thank you for using JEE College Recommendation Bot!")
-    except Exception as e:
-        print(f"\n❌ Unexpected error: {str(e)}")
-        print("Please restart the application.")
+    run_bot()
